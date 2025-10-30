@@ -1,7 +1,10 @@
-import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useState, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import { 
   Upload, 
   Type, 
@@ -15,82 +18,219 @@ import {
   Move,
   Copy,
   Trash2,
-  X
+  X,
+  Save
 } from "lucide-react";
+
+interface Layer {
+  id: string;
+  type: 'image' | 'text';
+  content: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  fontSize?: number;
+}
 
 const Designer = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [selectedSide, setSelectedSide] = useState<"front" | "back">("front");
+  const [layers, setLayers] = useState<Layer[]>([]);
+  const [selectedLayer, setSelectedLayer] = useState<string | null>(null);
+  const [textInput, setTextInput] = useState("");
+  const [zoom, setZoom] = useState(133);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const newLayer: Layer = {
+          id: Math.random().toString(36).substr(2, 9),
+          type: 'image',
+          content: event.target?.result as string,
+          x: 150,
+          y: 200,
+          width: 100,
+          height: 100,
+        };
+        setLayers([...layers, newLayer]);
+        toast.success('Image uploaded successfully');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAddText = () => {
+    if (!textInput.trim()) {
+      toast.error('Please enter some text');
+      return;
+    }
+    
+    const newLayer: Layer = {
+      id: Math.random().toString(36).substr(2, 9),
+      type: 'text',
+      content: textInput,
+      x: 170,
+      y: 250,
+      fontSize: 24,
+    };
+    setLayers([...layers, newLayer]);
+    setTextInput("");
+    toast.success('Text added successfully');
+  };
+
+  const handleDeleteLayer = () => {
+    if (selectedLayer) {
+      setLayers(layers.filter(l => l.id !== selectedLayer));
+      setSelectedLayer(null);
+      toast.success('Layer deleted');
+    }
+  };
+
+  const handleSaveProduct = () => {
+    if (layers.length === 0) {
+      toast.error('Please add at least one design element');
+      return;
+    }
+    
+    // Save product data
+    const productData = {
+      productId: id,
+      side: selectedSide,
+      layers,
+      savedAt: new Date().toISOString(),
+    };
+    
+    localStorage.setItem(`product_${id}`, JSON.stringify(productData));
+    toast.success('Product saved successfully!');
+    
+    // Check if user has a store
+    const hasStore = localStorage.getItem('user_store');
+    
+    // Navigate to create store or dashboard
+    setTimeout(() => {
+      if (!hasStore) {
+        navigate('/create-store');
+      } else {
+        navigate('/dashboard');
+      }
+    }, 1000);
+  };
 
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Top Toolbar */}
       <div className="h-14 border-b flex items-center justify-between px-4">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <X className="w-5 h-5" />
           </Button>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" disabled>
             <Undo2 className="w-5 h-5" />
           </Button>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" disabled>
             <Redo2 className="w-5 h-5" />
           </Button>
         </div>
         
         <div className="flex items-center gap-2">
-          <Button variant="outline">Edit</Button>
-          <Button variant="default" className="bg-primary hover:bg-primary-hover text-primary-foreground">
-            Preview
-          </Button>
-          <Button variant="ghost" size="icon">
-            <X className="w-5 h-5" />
+          <span className="text-sm font-medium">Product Designer</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="default" 
+            className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2"
+            onClick={handleSaveProduct}
+          >
+            <Save className="w-4 h-4" />
+            Save Product
           </Button>
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - Tools */}
-        <div className="w-20 border-r flex flex-col items-center py-4 gap-4">
-          <button className="flex flex-col items-center gap-1 p-2 hover:bg-muted rounded-lg transition-colors">
-            <Upload className="w-6 h-6" />
-            <span className="text-xs">Upload</span>
-          </button>
-          <button className="flex flex-col items-center gap-1 p-2 hover:bg-muted rounded-lg transition-colors">
-            <Type className="w-6 h-6" />
-            <span className="text-xs">Add text</span>
-          </button>
-          <button className="flex flex-col items-center gap-1 p-2 hover:bg-muted rounded-lg transition-colors">
-            <Folder className="w-6 h-6" />
-            <span className="text-xs">My library</span>
-          </button>
-          <button className="flex flex-col items-center gap-1 p-2 hover:bg-muted rounded-lg transition-colors">
-            <ImageIcon className="w-6 h-6" />
-            <span className="text-xs">Graphics</span>
-          </button>
-          <button className="flex flex-col items-center gap-1 p-2 hover:bg-muted rounded-lg transition-colors">
-            <Sparkles className="w-6 h-6" />
-            <span className="text-xs">AI Tools</span>
-          </button>
+        <div className="w-64 border-r flex flex-col p-4 gap-4 overflow-y-auto">
+          <div>
+            <Label className="text-sm font-semibold mb-2 block">Upload Image</Label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleUpload}
+              className="hidden"
+            />
+            <Button 
+              variant="outline" 
+              className="w-full justify-start gap-2"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-4 h-4" />
+              Upload Image
+            </Button>
+          </div>
+
+          <div>
+            <Label className="text-sm font-semibold mb-2 block">Add Text</Label>
+            <div className="space-y-2">
+              <Input
+                placeholder="Enter text..."
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleAddText()}
+              />
+              <Button 
+                variant="outline" 
+                className="w-full justify-start gap-2"
+                onClick={handleAddText}
+              >
+                <Type className="w-4 h-4" />
+                Add Text
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-sm font-semibold mb-2 block">Quick Actions</Label>
+            <div className="space-y-2">
+              <Button variant="outline" className="w-full justify-start gap-2" disabled>
+                <Folder className="w-4 h-4" />
+                My Library
+              </Button>
+              <Button variant="outline" className="w-full justify-start gap-2" disabled>
+                <ImageIcon className="w-4 h-4" />
+                Graphics
+              </Button>
+              <Button variant="outline" className="w-full justify-start gap-2" disabled>
+                <Sparkles className="w-4 h-4" />
+                AI Tools
+              </Button>
+            </div>
+          </div>
         </div>
 
         {/* Main Canvas */}
         <div className="flex-1 flex flex-col items-center justify-center bg-muted/30 relative">
           {/* Canvas Controls */}
-          <div className="absolute top-4 left-4 flex items-center gap-2 bg-background rounded-lg p-2 shadow-card">
-            <Button variant="ghost" size="icon">
-              <Move className="w-4 h-4" />
-            </Button>
-            <div className="w-px h-6 bg-border" />
-            <Button variant="ghost" size="icon">
-              <Copy className="w-4 h-4" />
-            </Button>
-            <Button variant="ghost" size="icon">
-              <Trash2 className="w-4 h-4" />
-            </Button>
-            <div className="w-px h-6 bg-border" />
-            <span className="text-sm px-2">Apply to all areas</span>
-          </div>
+          {selectedLayer && (
+            <div className="absolute top-4 left-4 flex items-center gap-2 bg-background rounded-lg p-2 shadow-card">
+              <Button variant="ghost" size="icon" disabled>
+                <Move className="w-4 h-4" />
+              </Button>
+              <div className="w-px h-6 bg-border" />
+              <Button variant="ghost" size="icon" disabled>
+                <Copy className="w-4 h-4" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={handleDeleteLayer}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
 
           {/* T-shirt Preview */}
           <div className="relative">
@@ -120,6 +260,43 @@ const Designer = () => {
                 strokeDasharray="5,5"
                 rx="4"
               />
+              
+              {/* Render layers */}
+              {layers.map((layer) => (
+                <g key={layer.id} onClick={() => setSelectedLayer(layer.id)}>
+                  {layer.type === 'image' ? (
+                    <image
+                      href={layer.content}
+                      x={layer.x}
+                      y={layer.y}
+                      width={layer.width}
+                      height={layer.height}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  ) : (
+                    <text
+                      x={layer.x}
+                      y={layer.y}
+                      fontSize={layer.fontSize}
+                      fill="#000"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {layer.content}
+                    </text>
+                  )}
+                  {selectedLayer === layer.id && (
+                    <rect
+                      x={layer.x - 2}
+                      y={layer.y - 2}
+                      width={layer.width || 100}
+                      height={layer.height || layer.fontSize || 24}
+                      fill="none"
+                      stroke="#26A17B"
+                      strokeWidth="2"
+                    />
+                  )}
+                </g>
+              ))}
             </svg>
 
             {/* Side Selector */}
@@ -143,11 +320,19 @@ const Designer = () => {
 
           {/* Zoom Controls */}
           <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-background rounded-lg p-2 shadow-card">
-            <Button variant="ghost" size="icon">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setZoom(Math.max(50, zoom - 10))}
+            >
               <ZoomOut className="w-4 h-4" />
             </Button>
-            <span className="text-sm px-2">133%</span>
-            <Button variant="ghost" size="icon">
+            <span className="text-sm px-2">{zoom}%</span>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setZoom(Math.min(200, zoom + 10))}
+            >
               <ZoomIn className="w-4 h-4" />
             </Button>
           </div>
@@ -202,15 +387,61 @@ const Designer = () => {
               </TabsContent>
 
               <TabsContent value="layers" className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  No layers added yet. Upload an image or add text to get started.
-                </p>
+                {layers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No layers added yet. Upload an image or add text to get started.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {layers.map((layer, index) => (
+                      <div
+                        key={layer.id}
+                        className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                          selectedLayer === layer.id ? 'border-primary bg-primary/5' : 'hover:bg-muted'
+                        }`}
+                        onClick={() => setSelectedLayer(layer.id)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {layer.type === 'image' ? (
+                              <ImageIcon className="w-4 h-4" />
+                            ) : (
+                              <Type className="w-4 h-4" />
+                            )}
+                            <span className="text-sm font-medium">
+                              {layer.type === 'image' ? 'Image' : 'Text'} {index + 1}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLayers(layers.filter(l => l.id !== layer.id));
+                              if (selectedLayer === layer.id) setSelectedLayer(null);
+                            }}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                        {layer.type === 'text' && (
+                          <p className="text-xs text-muted-foreground mt-1 truncate">
+                            {layer.content}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
 
             <Button 
               size="lg" 
-              className="w-full mt-8 bg-[#a3e635] hover:bg-[#84cc16] text-black font-semibold"
+              className="w-full mt-8 bg-primary hover:bg-primary-hover text-primary-foreground"
+              onClick={handleSaveProduct}
+              disabled={layers.length === 0}
             >
               Save product
             </Button>

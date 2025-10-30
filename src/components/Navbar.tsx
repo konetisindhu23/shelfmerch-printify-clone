@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ShoppingBag } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const Navbar = () => {
+  const { isAuthenticated, user } = useAuth();
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between">
@@ -25,12 +27,29 @@ export const Navbar = () => {
         </nav>
 
         <div className="flex items-center space-x-4">
-          <Button variant="ghost" size="sm" className="hidden md:inline-flex">
-            Log in
-          </Button>
-          <Button size="sm" className="bg-primary hover:bg-primary-hover text-primary-foreground">
-            Sign up for Free
-          </Button>
+          {isAuthenticated ? (
+            <>
+              <Link to="/dashboard">
+                <Button variant="ghost" size="sm" className="hidden md:inline-flex">
+                  Dashboard
+                </Button>
+              </Link>
+              <span className="text-sm font-medium hidden md:inline">{user?.name}</span>
+            </>
+          ) : (
+            <>
+              <Link to="/auth">
+                <Button variant="ghost" size="sm" className="hidden md:inline-flex">
+                  Log in
+                </Button>
+              </Link>
+              <Link to="/auth">
+                <Button size="sm" className="bg-primary hover:bg-primary-hover text-primary-foreground">
+                  Sign up for Free
+                </Button>
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>

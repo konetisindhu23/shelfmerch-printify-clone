@@ -548,6 +548,9 @@ const Designer = () => {
           </div>
         </div>
       </div>
+
+      {/* Store Wizard Modal */}
+      <StoreWizardModal open={showWizard} onClose={() => setShowWizard(false)} />
     </div>
   );
 };

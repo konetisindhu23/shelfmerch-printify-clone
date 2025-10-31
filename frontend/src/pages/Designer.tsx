@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,8 +19,13 @@ import {
   Copy,
   Trash2,
   X,
-  Save
+  Save,
+  DollarSign
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useData } from "@/contexts/DataContext";
+import { Product } from "@/types";
+import StoreWizardModal from "@/components/StoreWizardModal";
 
 interface Layer {
   id: string;

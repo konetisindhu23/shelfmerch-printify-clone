@@ -12,7 +12,7 @@ import CategoryProducts from "./pages/CategoryProducts";
 import ProductDetail from "./pages/ProductDetail";
 import Designer from "./pages/Designer";
 import Auth from "./pages/Auth";
-import Dashboard from "./pages/Dashboard";
+import DashboardNew from "./pages/DashboardNew";
 import Orders from "./pages/Orders";
 import Stores from "./pages/Stores";
 import Analytics from "./pages/Analytics";
@@ -50,7 +50,7 @@ const App = () => (
                 path="/dashboard"
                 element={
                   <ProtectedRoute>
-                    <Dashboard />
+                    <DashboardNew />
                   </ProtectedRoute>
                 }
               />

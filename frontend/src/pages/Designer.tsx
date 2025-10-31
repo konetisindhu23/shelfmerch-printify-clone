@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,8 +19,13 @@ import {
   Copy,
   Trash2,
   X,
-  Save
+  Save,
+  DollarSign
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useData } from "@/contexts/DataContext";
+import { Product } from "@/types";
+import StoreWizardModal from "@/components/StoreWizardModal";
 
 interface Layer {
   id: string;
@@ -36,11 +41,17 @@ interface Layer {
 const Designer = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { addProduct, store } = useData();
   const [selectedSide, setSelectedSide] = useState<"front" | "back">("front");
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayer, setSelectedLayer] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
   const [zoom, setZoom] = useState(133);
+  const [productName, setProductName] = useState(`Custom ${id || 'Product'}`);
+  const [price, setPrice] = useState("24.99");
+  const [compareAtPrice, setCompareAtPrice] = useState("");
+  const [showWizard, setShowWizard] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,45 +107,57 @@ const Designer = () => {
       toast.error('Please add at least one design element');
       return;
     }
-    
-    // Don't store large base64 images - store simplified data
-    const productData = {
-      productId: id,
-      name: `Custom ${id}`,
-      side: selectedSide,
-      layerCount: layers.length,
-      price: 24.99,
-      savedAt: new Date().toISOString(),
+
+    if (!productName.trim()) {
+      toast.error('Please enter a product name');
+      return;
+    }
+
+    const priceNum = parseFloat(price);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      toast.error('Please enter a valid price');
+      return;
+    }
+
+    if (!user?.id) {
+      toast.error('Please log in to save products');
+      return;
+    }
+
+    const newProduct: Product = {
+      id: Math.random().toString(36).substr(2, 9),
+      userId: user.id,
+      name: productName.trim(),
+      description: `Custom designed ${id} with ${layers.length} design elements`,
+      baseProduct: id || 'custom',
+      price: priceNum,
+      compareAtPrice: compareAtPrice ? parseFloat(compareAtPrice) : undefined,
+      designs: {
+        [selectedSide]: 'mockup-data', // In production, this would be actual design data
+      },
+      variants: {
+        colors: ['White', 'Black', 'Gray'],
+        sizes: ['S', 'M', 'L', 'XL', '2XL'],
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
     try {
-      // Save to products list
-      const existingProducts = localStorage.getItem('shelfmerch_saved_products');
-      const products = existingProducts ? JSON.parse(existingProducts) : [];
-      products.push(productData);
-      localStorage.setItem('shelfmerch_saved_products', JSON.stringify(products));
-      
-      // Dispatch update event for real-time sync
-      window.dispatchEvent(new CustomEvent('shelfmerch-data-update', { 
-        detail: { type: 'product', data: productData } 
-      }));
-      
+      addProduct(newProduct);
       toast.success('Product saved successfully!');
-      
+
       // Check if user has a store
-      const savedStores = localStorage.getItem('shelfmerch_stores');
-      const stores = savedStores ? JSON.parse(savedStores) : [];
-      
       setTimeout(() => {
-        if (stores.length === 0) {
-          navigate('/create-store');
+        if (!store) {
+          setShowWizard(true);
         } else {
           navigate('/dashboard');
         }
       }, 1000);
     } catch (error) {
       console.error('Storage error:', error);
-      toast.error('Storage full! Please clear some space or upgrade to Cloud.');
+      toast.error('Failed to save product. Please try again.');
     }
   };
 
@@ -365,11 +388,71 @@ const Designer = () => {
               </Button>
             </div>
 
-            <Tabs defaultValue="variants">
+            <Tabs defaultValue="details">
               <TabsList className="w-full mb-4">
+                <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
                 <TabsTrigger value="variants" className="flex-1">Variants</TabsTrigger>
                 <TabsTrigger value="layers" className="flex-1">Layers</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="details" className="space-y-4">
+                <div>
+                  <Label htmlFor="productName">Product Name</Label>
+                  <Input
+                    id="productName"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    placeholder="My Custom Product"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="price" className="flex items-center gap-1">
+                    <DollarSign className="w-4 h-4" />
+                    Price
+                  </Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="24.99"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="comparePrice">Compare at Price (Optional)</Label>
+                  <Input
+                    id="comparePrice"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={compareAtPrice}
+                    onChange={(e) => setCompareAtPrice(e.target.value)}
+                    placeholder="34.99"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Show original price for discount display
+                  </p>
+                </div>
+
+                <div className="p-3 bg-muted rounded-lg">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium">Customer pays:</span>
+                    <span className="text-lg font-bold">${price || '0.00'}</span>
+                  </div>
+                  {compareAtPrice && parseFloat(compareAtPrice) > parseFloat(price || '0') && (
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>You save:</span>
+                      <span className="font-semibold text-green-600">
+                        ${(parseFloat(compareAtPrice) - parseFloat(price || '0')).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
 
               <TabsContent value="variants" className="space-y-4">
                 <div>
@@ -465,6 +548,9 @@ const Designer = () => {
           </div>
         </div>
       </div>
+
+      {/* Store Wizard Modal */}
+      <StoreWizardModal open={showWizard} onClose={() => setShowWizard(false)} />
     </div>
   );
 };

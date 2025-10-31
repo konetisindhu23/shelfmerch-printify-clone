@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useData } from '@/contexts/DataContext';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { 
@@ -13,33 +14,10 @@ import {
   Plus,
   ExternalLink
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
 
 const Stores = () => {
   const { user, logout, isAdmin } = useAuth();
-  const [stores, setStores] = useState<any[]>([]);
-
-  useEffect(() => {
-    const loadStores = () => {
-      const savedStores = localStorage.getItem('shelfmerch_stores');
-      if (savedStores) {
-        const allStores = JSON.parse(savedStores);
-        setStores(allStores.filter((s: any) => s.userId === user?.id));
-      }
-    };
-
-    loadStores();
-
-    // Listen for real-time updates
-    const handleUpdate = (event: any) => {
-      if (event.detail?.type === 'store') {
-        loadStores();
-      }
-    };
-
-    window.addEventListener('shelfmerch-data-update', handleUpdate);
-    return () => window.removeEventListener('shelfmerch-data-update', handleUpdate);
-  }, [user]);
+  const { store } = useData();
 
   return (
     <div className="min-h-screen bg-background">
@@ -125,39 +103,40 @@ const Stores = () => {
           </div>
 
           {/* Stores Grid */}
-          {stores.length > 0 ? (
+          {store ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {stores.map((store) => (
-                <Card key={store.subdomain} className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-xl font-bold mb-1">{store.storeName}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {store.subdomain}.shelfmerch.com
-                      </p>
-                    </div>
-                    <Store className="h-8 w-8 text-primary" />
-                  </div>
-                  
-                  <div className="space-y-2 mb-4">
+              <Card key={store.subdomain} className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold mb-1">{store.storeName}</h3>
                     <p className="text-sm text-muted-foreground">
-                      Created: {new Date(store.createdAt).toLocaleDateString()}
+                      {store.subdomain}.shelfmerch.com
                     </p>
                   </div>
+                  <Store className="h-8 w-8 text-primary" />
+                </div>
+                
+                <div className="space-y-2 mb-4">
+                  <p className="text-sm text-muted-foreground">
+                    Created: {new Date(store.createdAt).toLocaleDateString()}
+                  </p>
+                  <p className="text-sm text-muted-foreground capitalize">
+                    Theme: {store.theme}
+                  </p>
+                </div>
 
-                  <div className="flex gap-2">
-                    <Button variant="default" className="flex-1" asChild>
-                      <Link to={`/store/${store.subdomain}`}>
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        View Store
-                      </Link>
-                    </Button>
-                    <Button variant="outline" className="flex-1">
-                      Manage
-                    </Button>
-                  </div>
-                </Card>
-              ))}
+                <div className="flex gap-2">
+                  <Button variant="default" className="flex-1" asChild>
+                    <Link to={`/store/${store.subdomain}`}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Visit Store
+                    </Link>
+                  </Button>
+                  <Button variant="outline" className="flex-1" asChild>
+                    <Link to="/dashboard">Manage</Link>
+                  </Button>
+                </div>
+              </Card>
             </div>
           ) : (
             <Card className="p-12 text-center">

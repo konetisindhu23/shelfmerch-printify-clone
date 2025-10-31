@@ -3,65 +3,7 @@ import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-const products = [
-  {
-    id: 1,
-    name: "Unisex Jersey Short Sleeve Tee",
-    brand: "Bella+Canvas · 3001",
-    price: "From USD 10.98",
-    image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=800",
-    badge: "Bestseller",
-  },
-  {
-    id: 2,
-    name: "Unisex Three-Quarter Sleeve Raglan Shirt",
-    brand: "By Tultex · 245",
-    price: "From USD 16.83",
-    image: "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?q=80&w=800",
-    badge: "New",
-  },
-  {
-    id: 3,
-    name: "Unisex Hooded Long Sleeve Tee",
-    brand: "By Bella+Canvas · 3512",
-    price: "From USD 20.65",
-    image: "https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=800",
-    badge: "New",
-  },
-  {
-    id: 4,
-    name: "Unisex Heavy Cotton Tee",
-    brand: "By Gildan · 5000",
-    price: "From USD 8.77",
-    image: "https://images.unsplash.com/photo-1576566588028-4147f3842f27?q=80&w=800",
-  },
-  {
-    id: 5,
-    name: "Velveteen Plush Blanket",
-    brand: "By Generic brand",
-    price: "From USD 13.24",
-    image: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?q=80&w=800",
-    badge: "Bestseller",
-  },
-  {
-    id: 6,
-    name: "Unisex Heavy Blend™ Crewneck Sweatshirt",
-    brand: "By Gildan · 18000",
-    price: "From USD 15.24",
-    image: "https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=800",
-    badge: "Bestseller",
-  },
-];
-
-const categories = [
-  { name: "Embroidery", image: "https://images.unsplash.com/photo-1562572159-4efc207f5aff?q=80&w=400" },
-  { name: "T-shirts", image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=400" },
-  { name: "Sweatshirts", image: "https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=400" },
-  { name: "Hoodies", image: "https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=400" },
-  { name: "Magnets and Stickers", image: "https://images.unsplash.com/photo-1600096194534-95cf5ece04cf?q=80&w=400" },
-  { name: "Seasonal Decorations", image: "https://images.unsplash.com/photo-1512909006721-3d6018887383?q=80&w=400" },
-];
+import { mockProducts, categories } from '@/data/products';
 
 const Products = () => {
   return (
@@ -86,7 +28,7 @@ const Products = () => {
             {categories.map((category) => (
               <Link
                 key={category.name}
-                to={`/products/category/${category.name.toLowerCase()}`}
+                to={`/products/category/${category.slug}`}
                 className="group"
               >
                 <Card className="overflow-hidden hover:shadow-elevated transition-shadow">
@@ -120,7 +62,7 @@ const Products = () => {
             </Link>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {products.slice(0, 4).map((product) => (
+            {mockProducts.slice(0, 4).map((product) => (
               <Link key={product.id} to={`/products/${product.id}`} className="group">
                 <Card className="overflow-hidden hover:shadow-elevated transition-shadow">
                   <CardContent className="p-0">
@@ -139,7 +81,7 @@ const Products = () => {
                     <div className="p-4">
                       <h3 className="font-semibold mb-1 line-clamp-1">{product.name}</h3>
                       <p className="text-sm text-muted-foreground mb-2">{product.brand}</p>
-                      <p className="font-semibold">{product.price}</p>
+                      <p className="font-semibold">From ${product.price}</p>
                       <p className="text-xs text-muted-foreground mt-1">9 sizes · 126 colors · 21 print providers</p>
                     </div>
                   </CardContent>
@@ -161,7 +103,7 @@ const Products = () => {
             </Link>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {products.slice(2).map((product) => (
+            {mockProducts.slice(2).map((product) => (
               <Link key={product.id} to={`/products/${product.id}`} className="group">
                 <Card className="overflow-hidden hover:shadow-elevated transition-shadow">
                   <CardContent className="p-0">
@@ -180,7 +122,7 @@ const Products = () => {
                     <div className="p-4">
                       <h3 className="font-semibold mb-1 line-clamp-1">{product.name}</h3>
                       <p className="text-sm text-muted-foreground mb-2">{product.brand}</p>
-                      <p className="font-semibold">{product.price}</p>
+                      <p className="font-semibold">From ${product.price}</p>
                       <p className="text-xs text-muted-foreground mt-1">8 sizes · 70 colors · 23 print providers</p>
                     </div>
                   </CardContent>

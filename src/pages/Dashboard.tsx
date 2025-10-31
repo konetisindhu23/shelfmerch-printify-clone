@@ -13,13 +13,24 @@ import {
   LogOut,
   Plus
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 const Dashboard = () => {
   const { user, logout, isAdmin } = useAuth();
+  const [products, setProducts] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Load saved products from localStorage
+    const savedProducts = localStorage.getItem('shelfmerch_saved_products');
+    if (savedProducts) {
+      const allProducts = JSON.parse(savedProducts);
+      setProducts(allProducts.filter((p: any) => p.userId === user?.id));
+    }
+  }, [user]);
 
   const stats = [
     { label: 'Total Orders', value: '0', icon: ShoppingBag, color: 'text-primary' },
-    { label: 'Products', value: '0', icon: Package, color: 'text-blue-500' },
+    { label: 'Products', value: products.length.toString(), icon: Package, color: 'text-blue-500' },
     { label: 'Revenue', value: '$0', icon: DollarSign, color: 'text-green-500' },
     { label: 'Profit', value: '$0', icon: TrendingUp, color: 'text-purple-500' },
   ];
@@ -39,17 +50,23 @@ const Dashboard = () => {
             <Package className="mr-2 h-4 w-4" />
             My Products
           </Button>
-          <Button variant="ghost" className="w-full justify-start">
-            <ShoppingBag className="mr-2 h-4 w-4" />
-            Orders
+          <Button variant="ghost" className="w-full justify-start" asChild>
+            <Link to="/orders">
+              <ShoppingBag className="mr-2 h-4 w-4" />
+              Orders
+            </Link>
           </Button>
-          <Button variant="ghost" className="w-full justify-start">
-            <Store className="mr-2 h-4 w-4" />
-            My Stores
+          <Button variant="ghost" className="w-full justify-start" asChild>
+            <Link to="/stores">
+              <Store className="mr-2 h-4 w-4" />
+              My Stores
+            </Link>
           </Button>
-          <Button variant="ghost" className="w-full justify-start">
-            <TrendingUp className="mr-2 h-4 w-4" />
-            Analytics
+          <Button variant="ghost" className="w-full justify-start" asChild>
+            <Link to="/analytics">
+              <TrendingUp className="mr-2 h-4 w-4" />
+              Analytics
+            </Link>
           </Button>
           {isAdmin && (
             <Button variant="ghost" className="w-full justify-start" asChild>
@@ -59,9 +76,11 @@ const Dashboard = () => {
               </Link>
             </Button>
           )}
-          <Button variant="ghost" className="w-full justify-start">
-            <Settings className="mr-2 h-4 w-4" />
-            Settings
+          <Button variant="ghost" className="w-full justify-start" asChild>
+            <Link to="/settings">
+              <Settings className="mr-2 h-4 w-4" />
+              Settings
+            </Link>
           </Button>
         </nav>
 
@@ -114,19 +133,50 @@ const Dashboard = () => {
             ))}
           </div>
 
-          {/* Empty State */}
-          <Card className="p-12 text-center">
-            <Package className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-            <h2 className="text-2xl font-bold mb-2">No products yet</h2>
-            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              Start by creating your first product. Choose from our catalog and customize it with your designs.
-            </p>
-            <Link to="/products">
-              <Button size="lg">
-                Browse Product Catalog
-              </Button>
-            </Link>
-          </Card>
+          {/* Products Display */}
+          {products.length > 0 ? (
+            <Card className="p-6">
+              <h2 className="text-xl font-bold mb-4">Your Products</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {products.map((product, index) => (
+                  <Card key={index} className="overflow-hidden">
+                    <div className="aspect-square bg-muted relative">
+                      {product.mockupUrl ? (
+                        <img
+                          src={product.mockupUrl}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                          No Preview
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4">
+                      <h3 className="font-semibold mb-1">{product.name}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Created {new Date(product.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </Card>
+          ) : (
+            <Card className="p-12 text-center">
+              <Package className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+              <h2 className="text-2xl font-bold mb-2">No products yet</h2>
+              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                Start by creating your first product. Choose from our catalog and customize it with your designs.
+              </p>
+              <Link to="/products">
+                <Button size="lg">
+                  Browse Product Catalog
+                </Button>
+              </Link>
+            </Card>
+          )}
         </div>
       </main>
     </div>

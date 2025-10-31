@@ -388,11 +388,71 @@ const Designer = () => {
               </Button>
             </div>
 
-            <Tabs defaultValue="variants">
+            <Tabs defaultValue="details">
               <TabsList className="w-full mb-4">
+                <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
                 <TabsTrigger value="variants" className="flex-1">Variants</TabsTrigger>
                 <TabsTrigger value="layers" className="flex-1">Layers</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="details" className="space-y-4">
+                <div>
+                  <Label htmlFor="productName">Product Name</Label>
+                  <Input
+                    id="productName"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    placeholder="My Custom Product"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="price" className="flex items-center gap-1">
+                    <DollarSign className="w-4 h-4" />
+                    Price
+                  </Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="24.99"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="comparePrice">Compare at Price (Optional)</Label>
+                  <Input
+                    id="comparePrice"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={compareAtPrice}
+                    onChange={(e) => setCompareAtPrice(e.target.value)}
+                    placeholder="34.99"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Show original price for discount display
+                  </p>
+                </div>
+
+                <div className="p-3 bg-muted rounded-lg">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium">Customer pays:</span>
+                    <span className="text-lg font-bold">${price || '0.00'}</span>
+                  </div>
+                  {compareAtPrice && parseFloat(compareAtPrice) > parseFloat(price || '0') && (
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>You save:</span>
+                      <span className="font-semibold text-green-600">
+                        ${(parseFloat(compareAtPrice) - parseFloat(price || '0')).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
 
               <TabsContent value="variants" className="space-y-4">
                 <div>

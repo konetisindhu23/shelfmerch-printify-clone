@@ -250,8 +250,28 @@ const StoreFrontendNew = () => {
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section
+      {/* Render Builder Layout or Default Layout */}
+      {usingBuilder && activePage ? (
+        // Builder-based layout
+        <div>
+          {activePage.sections
+            .filter(s => s.visible)
+            .sort((a, b) => a.order - b.order)
+            .map((section) => (
+              <SectionRenderer
+                key={section.id}
+                section={section}
+                products={products}
+                globalStyles={store.builder!.globalStyles}
+                isPreview={false}
+              />
+            ))}
+        </div>
+      ) : (
+        // Default theme-based layout
+        <>
+          {/* Hero Section */}
+          <section
         className="py-20"
         style={{
           background: `linear-gradient(to bottom right, ${theme.colors.primary}15, ${theme.colors.background})`,

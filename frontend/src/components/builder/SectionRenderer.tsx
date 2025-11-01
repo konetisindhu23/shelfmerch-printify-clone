@@ -37,23 +37,23 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
   switch (section.type) {
     case 'header':
       return (
-        <header style={sectionStyle} className=\"border-b\">
-          <div className=\"container mx-auto flex items-center justify-between\">
-            <div className=\"flex items-center gap-8\">
+        <header style={sectionStyle} className="border-b">
+          <div className="container mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-8">
               <h1
-                className=\"text-2xl font-bold\"
+                className="text-2xl font-bold"
                 style={{ color: globalStyles?.primaryColor || '#000' }}
               >
                 {section.settings.logo ? (
-                  <img src={section.settings.logo} alt=\"Logo\" className=\"h-8\" />
+                  <img src={section.settings.logo} alt="Logo" className="h-8" />
                 ) : (
                   section.settings.storeName
                 )}
               </h1>
               {section.settings.menuItems && (
-                <nav className=\"hidden md:flex gap-6\">
+                <nav className="hidden md:flex gap-6">
                   {section.settings.menuItems.map((item: any, idx: number) => (
-                    <a key={idx} href={item.link} className=\"hover:opacity-70 transition-opacity\">
+                    <a key={idx} href={item.link} className="hover:opacity-70 transition-opacity">
                       {item.label}
                     </a>
                   ))}
@@ -61,11 +61,11 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
               )}
             </div>
             {section.settings.showSearch && (
-              <div className=\"flex items-center gap-4\">
-                <Button variant=\"ghost\" size=\"sm\">
+              <div className="flex items-center gap-4">
+                <Button variant="ghost" size="sm">
                   Search
                 </Button>
-                <Button size=\"sm\" style={{ backgroundColor: globalStyles?.primaryColor }}>
+                <Button size="sm" style={{ backgroundColor: globalStyles?.primaryColor }}>
                   Cart (0)
                 </Button>
               </div>

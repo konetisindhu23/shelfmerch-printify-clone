@@ -133,7 +133,9 @@ const Stores = () => {
                     </Link>
                   </Button>
                   <Button variant="outline" className="flex-1" asChild>
-                    <Link to="/dashboard">Manage</Link>
+                    <Link to={`/stores/${user?.id}/builder`}>
+                      Visual Builder
+                    </Link>
                   </Button>
                 </div>
               </Card>

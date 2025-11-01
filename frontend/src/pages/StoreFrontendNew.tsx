@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import CartDrawer from '@/components/storefront/CartDrawer';
 import ProductDetailModal from '@/components/storefront/ProductDetailModal';
 import CheckoutModal from '@/components/storefront/CheckoutModal';
+import SectionRenderer from '@/components/builder/SectionRenderer';
 
 const StoreFrontendNew = () => {
   const { subdomain } = useParams<{ subdomain: string }>();

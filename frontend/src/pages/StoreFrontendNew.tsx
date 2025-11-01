@@ -186,6 +186,10 @@ const StoreFrontendNew = () => {
   const theme = getTheme(store.theme);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
+  // Check if store is using builder
+  const usingBuilder = store.useBuilder && store.builder;
+  const activePage = usingBuilder ? store.builder!.pages.find(p => p.slug === '/') : null;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Simulated Custom Domain Bar */}

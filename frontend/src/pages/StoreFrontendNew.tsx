@@ -391,6 +391,8 @@ const StoreFrontendNew = () => {
           </p>
         </div>
       </section>
+        </>
+      )}
 
       {/* Footer */}
       <footer className="border-t py-8">

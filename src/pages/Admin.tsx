@@ -69,7 +69,6 @@ import {
   Clock,
   ChevronRight,
 } from 'lucide-react';
-import { AddProductDialog } from '@/components/AddProductDialog';
 
 const Admin = () => {
   const { user, logout } = useAuth();
@@ -77,16 +76,11 @@ const Admin = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedTimeRange, setSelectedTimeRange] = useState('month');
   const [announcementText, setAnnouncementText] = useState('');
-  const [refreshKey, setRefreshKey] = useState(0);
 
   // Admin sees ALL data across platform (from localStorage)
   const allStores = JSON.parse(localStorage.getItem('shelfmerch_all_stores') || '[]') as StoreType[];
   const allProducts = JSON.parse(localStorage.getItem('shelfmerch_all_products') || '[]') as Product[];
   const allOrders = JSON.parse(localStorage.getItem('shelfmerch_all_orders') || '[]') as Order[];
-
-  const handleProductAdded = (product: Product) => {
-    setRefreshKey(prev => prev + 1);
-  };
   
   // Calculate real stats from data
   const totalRevenue = allOrders.reduce((sum, order) => sum + order.total, 0);
@@ -690,7 +684,9 @@ const Admin = () => {
                     Manage platform-wide product offerings
                   </p>
                 </div>
-                <AddProductDialog onProductAdded={handleProductAdded} />
+                <Button asChild>
+                  <Link to="/admin/products/new">Add Base Product</Link>
+                </Button>
               </div>
 
               <Card>

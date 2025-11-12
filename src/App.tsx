@@ -18,6 +18,7 @@ import Stores from "./pages/Stores";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
+import AdminProductCreation from "./pages/AdminProductCreation";
 import CreateStore from "./pages/CreateStore";
 import StoreFrontendNew from "./pages/StoreFrontendNew";
 import StoreProductPage from "./pages/StoreProductPage";
@@ -112,6 +113,14 @@ const App = () => (
                 element={
                   <ProtectedRoute requireAdmin>
                     <Admin />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/products/new"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminProductCreation />
                   </ProtectedRoute>
                 }
               />

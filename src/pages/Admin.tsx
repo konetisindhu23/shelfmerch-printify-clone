@@ -68,10 +68,12 @@ import {
   Activity,
   Clock,
   ChevronRight,
-  Wallet
+  Wallet,
+  Shield
 } from 'lucide-react';
 import { WalletManagement } from '@/components/admin/WalletManagement';
 import { InvoiceManagement } from '@/components/admin/InvoiceManagement';
+import { AuditLogs } from '@/components/admin/AuditLogs';
 
 const Admin = () => {
   const { user, logout } = useAuth();
@@ -304,6 +306,14 @@ const Admin = () => {
           >
             <FileText className="mr-2 h-4 w-4" />
             Invoices
+          </Button>
+          <Button 
+            variant={activeTab === 'audit' ? 'secondary' : 'ghost'} 
+            className="w-full justify-start"
+            onClick={() => setActiveTab('audit')}
+          >
+            <Shield className="mr-2 h-4 w-4" />
+            Audit Logs
           </Button>
           <Button 
             variant={activeTab === 'support' ? 'secondary' : 'ghost'} 
@@ -1290,6 +1300,9 @@ const Admin = () => {
 
           {/* Invoices Tab */}
           {activeTab === 'invoices' && <InvoiceManagement />}
+
+          {/* Audit Logs Tab */}
+          {activeTab === 'audit' && <AuditLogs />}
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (

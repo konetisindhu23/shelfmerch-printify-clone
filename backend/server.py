@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -103,6 +103,47 @@ class InvoiceCreate(BaseModel):
 class InvoiceUpdate(BaseModel):
     status: InvoiceStatus
 
+# Audit Log Models
+class AuditAction(str, Enum):
+    wallet_credit = "wallet_credit"
+    wallet_debit = "wallet_debit"
+    invoice_create = "invoice_create"
+    invoice_update = "invoice_update"
+    wallet_view = "wallet_view"
+    invoice_view = "invoice_view"
+
+class AuditLog(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    adminId: str
+    action: AuditAction
+    targetId: str  # walletId or invoiceId
+    targetType: str  # 'wallet' or 'invoice'
+    details: dict
+    ipAddress: Optional[str] = None
+    userAgent: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+# Helper function to create audit log
+async def create_audit_log(
+    adminId: str,
+    action: AuditAction,
+    targetId: str,
+    targetType: str,
+    details: dict,
+    request: Request
+):
+    audit_log = AuditLog(
+        adminId=adminId,
+        action=action,
+        targetId=targetId,
+        targetType=targetType,
+        details=details,
+        ipAddress=request.client.host if request.client else None,
+        userAgent=request.headers.get("user-agent")
+    )
+    await db.audit_logs.insert_one(audit_log.dict())
+    return audit_log
+
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
@@ -128,7 +169,7 @@ async def get_wallets(userId: Optional[str] = None):
     return [Wallet(**wallet) for wallet in wallets]
 
 @api_router.post("/wallets/{userId}/credit")
-async def credit_wallet(userId: str, credit_data: WalletCreditDebit):
+async def credit_wallet(userId: str, credit_data: WalletCreditDebit, request: Request):
     # Get or create wallet
     wallet = await db.wallets.find_one({"userId": userId})
     if not wallet:
@@ -154,10 +195,25 @@ async def credit_wallet(userId: str, credit_data: WalletCreditDebit):
     )
     await db.wallet_transactions.insert_one(transaction.dict())
     
+    # Create audit log
+    await create_audit_log(
+        adminId=credit_data.adminId,
+        action=AuditAction.wallet_credit,
+        targetId=wallet["id"],
+        targetType="wallet",
+        details={
+            "userId": userId,
+            "amount": credit_data.amount,
+            "description": credit_data.description,
+            "newBalance": new_balance
+        },
+        request=request
+    )
+    
     return {"success": True, "newBalance": new_balance}
 
 @api_router.post("/wallets/{userId}/debit")
-async def debit_wallet(userId: str, debit_data: WalletCreditDebit):
+async def debit_wallet(userId: str, debit_data: WalletCreditDebit, request: Request):
     # Get wallet
     wallet = await db.wallets.find_one({"userId": userId})
     if not wallet:
@@ -184,6 +240,21 @@ async def debit_wallet(userId: str, debit_data: WalletCreditDebit):
         adminId=debit_data.adminId
     )
     await db.wallet_transactions.insert_one(transaction.dict())
+    
+    # Create audit log
+    await create_audit_log(
+        adminId=debit_data.adminId,
+        action=AuditAction.wallet_debit,
+        targetId=wallet["id"],
+        targetType="wallet",
+        details={
+            "userId": userId,
+            "amount": debit_data.amount,
+            "description": debit_data.description,
+            "newBalance": new_balance
+        },
+        request=request
+    )
     
     return {"success": True, "newBalance": new_balance}
 
@@ -214,9 +285,25 @@ async def get_invoices(
     return [Invoice(**invoice) for invoice in invoices]
 
 @api_router.post("/invoices/generate", response_model=Invoice)
-async def generate_invoice(invoice_data: InvoiceCreate):
+async def generate_invoice(invoice_data: InvoiceCreate, request: Request, adminId: str = "system"):
     invoice = Invoice(**invoice_data.dict())
     await db.invoices.insert_one(invoice.dict())
+    
+    # Create audit log
+    await create_audit_log(
+        adminId=adminId,
+        action=AuditAction.invoice_create,
+        targetId=invoice.id,
+        targetType="invoice",
+        details={
+            "orderId": invoice.orderId,
+            "buyerId": invoice.buyerId,
+            "sellerId": invoice.sellerId,
+            "total": invoice.total
+        },
+        request=request
+    )
+    
     return invoice
 
 @api_router.get("/invoices/{invoice_id}")
@@ -227,14 +314,88 @@ async def get_invoice(invoice_id: str):
     return Invoice(**invoice)
 
 @api_router.patch("/invoices/{invoice_id}")
-async def update_invoice(invoice_id: str, update_data: InvoiceUpdate):
+async def update_invoice(invoice_id: str, update_data: InvoiceUpdate, request: Request, adminId: str = "system"):
+    # Get invoice before update
+    invoice = await db.invoices.find_one({"id": invoice_id})
+    if not invoice:
+        return {"success": False, "error": "Invoice not found"}
+    
+    old_status = invoice.get("status")
+    
     result = await db.invoices.update_one(
         {"id": invoice_id},
         {"$set": {"status": update_data.status}}
     )
+    
     if result.modified_count == 0:
         return {"success": False, "error": "Invoice not found"}
+    
+    # Create audit log
+    await create_audit_log(
+        adminId=adminId,
+        action=AuditAction.invoice_update,
+        targetId=invoice_id,
+        targetType="invoice",
+        details={
+            "oldStatus": old_status,
+            "newStatus": update_data.status,
+            "orderId": invoice.get("orderId")
+        },
+        request=request
+    )
+    
     return {"success": True}
+
+# Audit Log Routes
+@api_router.get("/audit-logs")
+async def get_audit_logs(
+    adminId: Optional[str] = None,
+    action: Optional[str] = None,
+    targetType: Optional[str] = None,
+    startDate: Optional[str] = None,
+    endDate: Optional[str] = None,
+    limit: int = 100
+):
+    query = {}
+    if adminId:
+        query["adminId"] = adminId
+    if action:
+        query["action"] = action
+    if targetType:
+        query["targetType"] = targetType
+    if startDate or endDate:
+        query["timestamp"] = {}
+        if startDate:
+            query["timestamp"]["$gte"] = datetime.fromisoformat(startDate)
+        if endDate:
+            query["timestamp"]["$lte"] = datetime.fromisoformat(endDate)
+    
+    logs = await db.audit_logs.find(query).sort("timestamp", -1).limit(limit).to_list(limit)
+    return [AuditLog(**log) for log in logs]
+
+@api_router.get("/audit-logs/stats")
+async def get_audit_stats():
+    total_logs = await db.audit_logs.count_documents({})
+    
+    # Count by action type
+    action_pipeline = [
+        {"$group": {"_id": "$action", "count": {"$sum": 1}}}
+    ]
+    action_stats = await db.audit_logs.aggregate(action_pipeline).to_list(100)
+    
+    # Count by admin
+    admin_pipeline = [
+        {"$group": {"_id": "$adminId", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10}
+    ]
+    admin_stats = await db.audit_logs.aggregate(admin_pipeline).to_list(10)
+    
+    return {
+        "totalLogs": total_logs,
+        "byAction": {stat["_id"]: stat["count"] for stat in action_stats},
+        "topAdmins": [{"adminId": stat["_id"], "count": stat["count"]} for stat in admin_stats]
+    }
 
 # Include the router in the main app
 app.include_router(api_router)

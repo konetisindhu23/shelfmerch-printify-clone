@@ -22,6 +22,10 @@ if (missingVars.length > 0) {
 
 // Import routes
 const authRoutes = require('./routes/auth');
+const productRoutes = require('./routes/products');
+const variantRoutes = require('./routes/variants');
+const variantOptionsRoutes = require('./routes/variantOptions');
+const catalogueFieldsRoutes = require('./routes/catalogueFields');
 
 // Initialize Express app
 const app = express();
@@ -75,9 +79,9 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-// Body parser middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Body parser middleware - Increased limit for base64 images
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Cookie parser
 app.use(cookieParser());
@@ -87,8 +91,8 @@ app.set('trust proxy', 1);
 
 // Rate limiting (skip for OPTIONS requests)
 const limiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 6000, // limit each IP to 1000 requests per windowMs (increased from 100)
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -105,7 +109,12 @@ app.use((req, res, next) => {
     console.log('Preflight request received');
   }
   if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
-    console.log(`Body:`, req.body);
+    // Don't log full body for product routes (too large with base64 images)
+    if (req.path.includes('/products')) {
+      console.log(`Body size: ${JSON.stringify(req.body).length} characters`);
+    } else {
+      console.log(`Body:`, req.body);
+    }
   }
   next();
 });
@@ -122,6 +131,10 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/variants', variantRoutes);
+app.use('/api/variant-options', variantOptionsRoutes);
+app.use('/api/catalogue-fields', catalogueFieldsRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -213,6 +226,19 @@ const connectDB = async () => {
   }
 };
 
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err, promise) => {
+  console.error('Unhandled Promise Rejection:', err);
+  console.error('Stack:', err.stack);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  console.error('Stack:', err.stack);
+  process.exit(1);
+});
+
 // Start server
 const PORT = process.env.PORT || 8000;
 
@@ -224,6 +250,9 @@ const startServer = async () => {
       console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/health`);
     });
+
+    // Increase server timeout for large requests
+    server.timeout = 30000;
 
     // Graceful shutdown
     process.on('SIGTERM', () => {

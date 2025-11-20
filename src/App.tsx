@@ -8,7 +8,9 @@ import { DataProvider } from "./contexts/DataContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import Index from "./pages/Index";
 import Products from "./pages/Products";
+import AllCategories from "./pages/AllCategories";
 import CategoryProducts from "./pages/CategoryProducts";
+import CategorySubcategories from "./pages/Apparel";
 import ProductDetail from "./pages/ProductDetail";
 import Designer from "./pages/Designer";
 import Auth from "./pages/Auth";
@@ -19,6 +21,9 @@ import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import AdminProductCreation from "./pages/AdminProductCreation";
+import AdminProductDetail from "./pages/AdminProductDetail";
+import ManageVariantOptions from "./pages/ManageVariantOptions";
+import ManageCatalogueFields from "./pages/ManageCatalogueFields";
 import CreateStore from "./pages/CreateStore";
 import StoreFrontendNew from "./pages/StoreFrontendNew";
 import StoreProductPage from "./pages/StoreProductPage";
@@ -41,6 +46,8 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/products" element={<Products />} />
+              <Route path="/categories" element={<AllCategories />} />
+              <Route path="/category-subcategories/:categoryId" element={<CategorySubcategories />} />
               <Route path="/products/category/:slug" element={<CategoryProducts />} />
               <Route path="/products/:id" element={<ProductDetail />} />
               <Route path="/auth" element={<Auth />} />
@@ -122,6 +129,38 @@ const App = () => (
                   // <ProtectedRoute >
                     <AdminProductCreation />
                   // </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/products/:id/edit"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminProductCreation />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/products/:id"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <AdminProductDetail />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/variant-options"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <ManageVariantOptions />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/catalogue-fields"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <ManageCatalogueFields />
+                  </ProtectedRoute>
                 }
               />
               <Route

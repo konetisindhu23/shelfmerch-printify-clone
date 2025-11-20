@@ -23,6 +23,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Product } from '@/types';
 import { categories } from '@/data/products';
+import { getColorHex } from '@/utils/colorMap';
 
 interface AddProductDialogProps {
   onProductAdded: (product: Product) => void;
@@ -30,18 +31,10 @@ interface AddProductDialogProps {
 
 const AVAILABLE_SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', 'One Size'];
 const AVAILABLE_COLORS = [
-  { name: 'White', hex: '#FFFFFF' },
-  { name: 'Black', hex: '#000000' },
-  { name: 'Gray', hex: '#9CA3AF' },
-  { name: 'Navy', hex: '#1E3A8A' },
-  { name: 'Red', hex: '#DC2626' },
-  { name: 'Blue', hex: '#2563EB' },
-  { name: 'Green', hex: '#16A34A' },
-  { name: 'Yellow', hex: '#EAB308' },
-  { name: 'Pink', hex: '#EC4899' },
-  { name: 'Purple', hex: '#9333EA' },
-  { name: 'Orange', hex: '#EA580C' },
-  { name: 'Brown', hex: '#92400E' },
+  'White', 'Black', 'Gray', 'Light Gray', 'Navy', 'Red', 'Blue', 'Royal Blue',
+  'Green', 'Forest Green', 'Yellow', 'Pink', 'Purple', 'Orange', 'Brown',
+  'Tan', 'Beige-Gray', 'Olive', 'Maroon', 'Burgundy', 'Charcoal', 'Silver',
+  'Gold', 'Rose Gold'
 ];
 
 export const AddProductDialog = ({ onProductAdded }: AddProductDialogProps) => {
@@ -184,7 +177,7 @@ export const AddProductDialog = ({ onProductAdded }: AddProductDialogProps) => {
       <DialogTrigger asChild>
         <Button className="gap-2">
           <Plus className="h-4 w-4" />
-          Add Fake Product
+          Add Fabke Product
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -308,18 +301,18 @@ export const AddProductDialog = ({ onProductAdded }: AddProductDialogProps) => {
             <div className="grid grid-cols-4 gap-3">
               {AVAILABLE_COLORS.map((color) => (
                 <label
-                  key={color.name}
+                  key={color}
                   className="flex items-center space-x-2 cursor-pointer p-3 rounded-lg border hover:bg-muted transition-colors"
                 >
                   <Checkbox
-                    checked={selectedColors.includes(color.name)}
-                    onCheckedChange={() => handleColorToggle(color.name)}
+                    checked={selectedColors.includes(color)}
+                    onCheckedChange={() => handleColorToggle(color)}
                   />
                   <div
                     className="w-6 h-6 rounded-full border-2"
-                    style={{ backgroundColor: color.hex }}
+                    style={{ backgroundColor: getColorHex(color) }}
                   />
-                  <span className="text-sm font-medium">{color.name}</span>
+                  <span className="text-sm font-medium">{color}</span>
                 </label>
               ))}
             </div>

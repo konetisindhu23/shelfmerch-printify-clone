@@ -1,190 +1,318 @@
-import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { 
-  ArrowLeft, 
-  Upload, 
-  X, 
-  Square, 
-  Circle, 
-  Triangle, 
-  Hexagon, 
-  Star, 
-  Pentagon,
-  Grid3x3,
-  RotateCw,
-  RotateCcw,
-  Info,
-  Eye,
-  EyeOff,
-  CheckCircle2
-} from 'lucide-react';
+import { ArrowLeft, ChevronRight, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-
-type PlaceholderShape = 'rectangle' | 'circle' | 'triangle' | 'hexagon' | 'star' | 'pentagon' | 'custom';
-type ViewMode = 'front' | 'back' | 'side';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { ProductCatalogueSection } from '@/components/admin/ProductCatalogueSection';
+import { ProductVariantsSection } from '@/components/admin/ProductVariantsSection';
+import { ProductImageConfigurator } from '@/components/admin/ProductImageConfigurator';
+import { ProductGallerySection } from '@/components/admin/ProductGallerySection';
+import { ShippingPackagingSection } from '@/components/admin/ShippingPackagingSection';
+import { ProductPricingSection } from '@/components/admin/ProductPricingSection';
+import { ProductStocksSection } from '@/components/admin/ProductStocksSection';
+import { ProductOptionsSection } from '@/components/admin/ProductOptionsSection';
+import { ProductDetailsSection } from '@/components/admin/ProductDetailsSection';
+import { ProductFormData, ProductCatalogueData, ProductDesignData, ProductShippingData, ProductPricingData, ProductStocksData, ProductOptionsData, ProductDetailsData, ProductVariant, ProductGalleryImage, ViewConfig } from '@/types/product';
+import { productApi } from '@/lib/api';
 
 const AdminProductCreation = () => {
   const navigate = useNavigate();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Form state
-  const [productName, setProductName] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('');
-  const [subcategories, setSubcategories] = useState<string[]>([]);
-  const [price, setPrice] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState('');
-  
-  // Image and mockup state
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [hasTransparency, setHasTransparency] = useState(false);
-  const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
-  const [placeholderShape, setPlaceholderShape] = useState<PlaceholderShape>('rectangle');
-  const [viewMode, setViewMode] = useState<ViewMode>('front');
-  const [rotation, setRotation] = useState(0);
-  const [hideAreas, setHideAreas] = useState(false);
-  const [magneticCanvas, setMagneticCanvas] = useState(false);
-  
-  // Color variants
-  const [selectedColors, setSelectedColors] = useState<string[]>([]);
-  const [colorInput, setColorInput] = useState('#000000');
-  const [colorNameInput, setColorNameInput] = useState('');
+  const { id } = useParams<{ id: string }>();
+  const isEditMode = !!id;
+  const [activeStep, setActiveStep] = useState('catalogue');
+  const [isLoading, setIsLoading] = useState(isEditMode);
 
-  const subcategoryOptions = [
-    'T-Shirts', 'Hoodies', 'Sweatshirts', 'Tank Tops', 'Long Sleeves',
-    'Mugs', 'Phone Cases', 'Tote Bags', 'Posters', 'Stickers'
-  ];
+  // SECTION A: Product Catalogue Data
+  const [catalogueData, setCatalogueData] = useState<ProductCatalogueData>({
+    name: '',
+    description: '',
+    categoryId: '',
+    subcategoryIds: [],
+    basePrice: 0,
+    tags: [],
+    productTypeCode: '',
+    attributes: {},
+  });
 
-  const commonColors = [
-    { name: 'Black', hex: '#000000' },
-    { name: 'White', hex: '#FFFFFF' },
-    { name: 'Navy', hex: '#001F3F' },
-    { name: 'Red', hex: '#FF4136' },
-    { name: 'Blue', hex: '#0074D9' },
-    { name: 'Green', hex: '#2ECC40' },
-    { name: 'Yellow', hex: '#FFDC00' },
-    { name: 'Orange', hex: '#FF851B' },
-  ];
+  // SECTION B: Product Details (Barcode and Identification)
+  const [detailsData, setDetailsData] = useState<ProductDetailsData>({
+    mpn: '',
+    upc: '',
+    ean13: '',
+    isbn: '',
+  });
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // SECTION C: Product Variants (Sizes & Colors)
+  const [availableSizes, setAvailableSizes] = useState<string[]>([]);
+  const [availableColors, setAvailableColors] = useState<string[]>([]);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
 
-    // Check file type
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please upload an image file');
-      return;
-    }
+  // SECTION D: Design Data (Mockup + Print Areas)
+  const [designData, setDesignData] = useState<ProductDesignData>({
+    views: [
+      { key: 'front', mockupImageUrl: '', placeholders: [] },
+      { key: 'back', mockupImageUrl: '', placeholders: [] },
+      { key: 'left', mockupImageUrl: '', placeholders: [] },
+      { key: 'right', mockupImageUrl: '', placeholders: [] },
+    ],
+    dpi: 300,
+  });
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        setUploadedImage(event.target?.result as string);
-        setImageSize({ width: img.width, height: img.height });
-        
-        // Check for transparency (simplified check)
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0);
-          const imageData = ctx.getImageData(0, 0, img.width, img.height);
-          const hasAlpha = imageData.data.some((_, i) => i % 4 === 3 && imageData.data[i] < 255);
-          setHasTransparency(hasAlpha);
+  // SECTION E: Product Gallery Images (Customer-facing display images)
+  const [galleryImages, setGalleryImages] = useState<ProductGalleryImage[]>([]);
+
+  // SECTION F: Shipping & Packaging Data
+  const [shippingData, setShippingData] = useState<ProductShippingData>({
+    packageLengthCm: 0,
+    packageWidthCm: 0,
+    packageHeightCm: 0,
+    packageWeightGrams: 0,
+  });
+
+  // SECTION G: Pricing Data
+  const [pricingData, setPricingData] = useState<ProductPricingData>({
+    retailPriceTaxExcl: 0,
+    taxRule: '',
+    taxRate: 0,
+    retailPriceTaxIncl: 0,
+    costPriceTaxExcl: 0,
+    displayPricePerUnit: false,
+    pricePerUnitTaxExcl: 0,
+    pricePerUnitTaxIncl: 0,
+    unit: '',
+  });
+
+  // SECTION H: Stocks/Inventory Data
+  const [stocksData, setStocksData] = useState<ProductStocksData>({
+    minimumQuantity: 1,
+    stockLocation: '',
+    lowStockAlertEnabled: false,
+    lowStockAlertEmail: '',
+    lowStockThreshold: 10,
+    outOfStockBehavior: 'default',
+    currentStock: undefined,
+  });
+
+  // SECTION I: Product Options/Settings Data
+  const [optionsData, setOptionsData] = useState<ProductOptionsData>({
+    visibility: 'everywhere',
+    availableForOrder: true,
+    showPrice: true,
+    webOnly: false,
+    suppliers: [],
+  });
+
+  // Fetch product data if in edit mode
+  useEffect(() => {
+    const fetchProduct = async () => {
+      if (!isEditMode || !id) return;
+
+      setIsLoading(true);
+      try {
+        const response = await productApi.getById(id);
+        if (response && response.success === true && response.data) {
+          const product = response.data;
+          
+          // Populate form with existing product data
+          if (product.catalogue) {
+            setCatalogueData({
+              name: product.catalogue.name || '',
+              description: product.catalogue.description || '',
+              categoryId: product.catalogue.categoryId || '',
+              subcategoryIds: product.catalogue.subcategoryIds || [],
+              basePrice: product.catalogue.basePrice || 0,
+              tags: product.catalogue.tags || [],
+              productTypeCode: product.catalogue.productTypeCode || '',
+              attributes: product.catalogue.attributes || {},
+            });
+          }
+          
+          if (product.details) {
+            setDetailsData({
+              mpn: product.details.mpn || '',
+              upc: product.details.upc || '',
+              ean13: product.details.ean13 || '',
+              isbn: product.details.isbn || '',
+            });
+          }
+          
+          if (product.design) {
+            // Migrate old placeholders (wIn/hIn) to new format (widthIn/heightIn)
+            const migratedViews = (product.design.views || []).map((view: ViewConfig) => ({
+              ...view,
+              placeholders: view.placeholders.map((p: any) => ({
+                id: p.id,
+                xIn: p.xIn,
+                yIn: p.yIn,
+                widthIn: p.widthIn ?? p.wIn ?? 6, // Migrate old wIn to widthIn
+                heightIn: p.heightIn ?? p.hIn ?? 6, // Migrate old hIn to heightIn
+                rotationDeg: p.rotationDeg ?? 0,
+                scale: p.scale ?? 1.0,
+                lockSize: p.lockSize ?? false,
+              })),
+            }));
+
+            setDesignData({
+              views: migratedViews.length > 0 ? migratedViews : [
+                { key: 'front', mockupImageUrl: '', placeholders: [] },
+                { key: 'back', mockupImageUrl: '', placeholders: [] },
+                { key: 'left', mockupImageUrl: '', placeholders: [] },
+                { key: 'right', mockupImageUrl: '', placeholders: [] },
+              ],
+              dpi: product.design.dpi || 300,
+            });
+          }
+          
+          if (product.shipping) {
+            setShippingData({
+              packageLengthCm: product.shipping.packageLengthCm || 0,
+              packageWidthCm: product.shipping.packageWidthCm || 0,
+              packageHeightCm: product.shipping.packageHeightCm || 0,
+              packageWeightGrams: product.shipping.packageWeightGrams || 0,
+              deliveryTimeOption: product.shipping.deliveryTimeOption || 'specific',
+              inStockDeliveryTime: product.shipping.inStockDeliveryTime || '',
+              outOfStockDeliveryTime: product.shipping.outOfStockDeliveryTime || '',
+              additionalShippingCost: product.shipping.additionalShippingCost || 0,
+              carrierSelection: product.shipping.carrierSelection || 'all',
+              selectedCarriers: product.shipping.selectedCarriers || [],
+            });
+          }
+          
+          if (product.variants) {
+            setVariants(product.variants);
+          }
+          
+          if (product.availableSizes) {
+            setAvailableSizes(product.availableSizes);
+          }
+          
+          if (product.availableColors) {
+            setAvailableColors(product.availableColors);
+          }
+          
+          if (product.galleryImages) {
+            setGalleryImages(product.galleryImages);
+          }
+
+          if (product.pricing) {
+            setPricingData(product.pricing);
+          }
+
+          if (product.stocks) {
+            setStocksData(product.stocks);
+          }
+
+          if (product.options) {
+            setOptionsData(product.options);
+          }
+        } else {
+          toast.error('Product not found');
+          navigate('/admin?tab=products');
         }
-        
-        toast.success('Image uploaded successfully');
-      };
-      img.src = event.target?.result as string;
+      } catch (error: any) {
+        console.error('Failed to fetch product:', error);
+        toast.error(error.message || 'Failed to load product');
+        navigate('/admin?tab=products');
+      } finally {
+        setIsLoading(false);
+      }
     };
-    reader.readAsDataURL(file);
-  };
 
-  const handleRemoveImage = () => {
-    setUploadedImage(null);
-    setHasTransparency(false);
-    setImageSize(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
+    fetchProduct();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditMode, id]); // navigate is stable and doesn't need to be in dependencies
 
-  const handleAddTag = () => {
-    if (tagInput.trim() && !tags.includes(tagInput.trim())) {
-      setTags([...tags, tagInput.trim()]);
-      setTagInput('');
-    }
-  };
-
-  const handleRemoveTag = (tag: string) => {
-    setTags(tags.filter(t => t !== tag));
-  };
-
-  const handleAddColor = () => {
-    const colorData = `${colorNameInput}:${colorInput}`;
-    if (colorNameInput.trim() && colorInput && !selectedColors.includes(colorData)) {
-      setSelectedColors([...selectedColors, colorData]);
-      setColorInput('#000000');
-      setColorNameInput('');
-    }
-  };
-
-  const handleAddCommonColor = (color: { name: string; hex: string }) => {
-    const colorData = `${color.name}:${color.hex}`;
-    if (!selectedColors.includes(colorData)) {
-      setSelectedColors([...selectedColors, colorData]);
-    }
-  };
-
-  const handleRemoveColor = (color: string) => {
-    setSelectedColors(selectedColors.filter(c => c !== color));
-  };
-
-  const handleRotate = (degrees: number) => {
-    setRotation((prev) => (prev + degrees) % 360);
-  };
-
-  const handleResetRotation = () => {
-    setRotation(0);
-  };
-
-  const handleCreateProduct = () => {
-    if (!productName || !description || !category || price === '') {
-      toast.error('Please fill in all required fields');
+  const handleCreateProduct = async () => {
+    // Validation - Section A
+    if (!catalogueData.name || !catalogueData.description || !catalogueData.categoryId || catalogueData.basePrice === 0) {
+      toast.error('Please fill in all required catalogue fields');
       return;
     }
 
-    if (!uploadedImage) {
-      toast.error('Please upload a product image');
+    // Validation - Section B
+    if (availableSizes.length === 0 || availableColors.length === 0) {
+      toast.error('Please select at least one size and one color');
       return;
     }
 
-    // Here you would typically save to your backend/database
-    toast.success('Product created successfully!');
-    navigate('/admin');
-  };
+    // Validation - Section C
+    const hasMockup = designData.views.some(v => v.mockupImageUrl);
+    if (!hasMockup) {
+      toast.error('Please upload at least one mockup image');
+      return;
+    }
 
-  const shapeIcons = {
-    rectangle: Square,
-    circle: Circle,
-    triangle: Triangle,
-    hexagon: Hexagon,
-    star: Star,
-    pentagon: Pentagon,
-    custom: Grid3x3,
+    // Validation - Section D (Gallery Images)
+    if (galleryImages.length === 0) {
+      toast.error('Please upload at least one product gallery image');
+      return;
+    }
+    const hasPrimaryImage = galleryImages.some(img => img.isPrimary);
+    if (!hasPrimaryImage) {
+      toast.error('Please mark one image as Primary');
+      return;
+    }
+
+    // Validation - Section E (Shipping)
+    if (
+      shippingData.packageLengthCm === 0 ||
+      shippingData.packageWidthCm === 0 ||
+      shippingData.packageHeightCm === 0 ||
+      shippingData.packageWeightGrams === 0
+    ) {
+      toast.error('Please fill in all shipping and packaging dimensions');
+      return;
+    }
+
+    // Prepare payload
+    const payload: ProductFormData = {
+      catalogue: catalogueData,
+      details: detailsData,
+      design: designData,
+      shipping: shippingData,
+      pricing: pricingData,
+      stocks: stocksData,
+      options: optionsData,
+      variants,
+      availableSizes,
+      availableColors,
+      galleryImages,
+    };
+
+    try {
+      let response;
+      if (isEditMode && id) {
+        // Update existing product
+        response = await productApi.update(id, payload) as any;
+      } else {
+        // Create new product
+        response = await productApi.create(payload) as any;
+      }
+      
+      if (response && response.success === true) {
+        toast.success(response.message || (isEditMode ? 'Product updated successfully!' : 'Product created successfully!'));
+        // Navigate to admin products tab to see the product
+        navigate('/admin?tab=products');
+      } else {
+        const errorMessage = response?.message || response?.error || (isEditMode ? 'Failed to update product' : 'Failed to create product');
+        toast.error(errorMessage);
+        if (response?.errors && Array.isArray(response.errors)) {
+          console.error('Validation errors:', response.errors);
+        }
+      }
+    } catch (error: any) {
+      console.error(`Error ${isEditMode ? 'updating' : 'creating'} product:`, error);
+      // Try to extract error message from response
+      let errorMessage = isEditMode ? 'Failed to update product. Please try again.' : 'Failed to create product. Please try again.';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.error) {
+        errorMessage = error.error;
+      }
+      toast.error(errorMessage);
+    }
   };
 
   return (
@@ -215,541 +343,346 @@ const AdminProductCreation = () => {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-foreground">Add New Product</h1>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Column - Product Details */}
-          <div className="space-y-6">
-            <Card>
-              <CardContent className="pt-6 space-y-4">
-                {/* Product Name */}
-                <div className="space-y-2">
-                  <Label htmlFor="productName">Product Name</Label>
-                  <Input
-                    id="productName"
-                    placeholder="Enter product name"
-                    value={productName}
-                    onChange={(e) => setProductName(e.target.value)}
-                  />
-                </div>
-
-                {/* Description */}
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    placeholder="Enter product description"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={4}
-                  />
-                </div>
-
-                {/* Category */}
-                <div className="space-y-2">
-                  <Label htmlFor="category">Category</Label>
-                  <Select value={category} onValueChange={setCategory}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="apparel">Apparel</SelectItem>
-                      <SelectItem value="accessories">Accessories</SelectItem>
-                      <SelectItem value="home">Home & Living</SelectItem>
-                      <SelectItem value="art">Art Prints</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Subcategories */}
-                <div className="space-y-2">
-                  <Label>Subcategories</Label>
-                  <Select
-                    value=""
-                    onValueChange={(value) => {
-                      if (!subcategories.includes(value)) {
-                        setSubcategories([...subcategories, value]);
-                      }
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select subcategories" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {subcategoryOptions.map((sub) => (
-                        <SelectItem key={sub} value={sub}>
-                          {sub}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {subcategories.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {subcategories.map((sub) => (
-                        <Badge key={sub} variant="secondary" className="gap-1">
-                          {sub}
-                          <X
-                            className="h-3 w-3 cursor-pointer"
-                            onClick={() => setSubcategories(subcategories.filter(s => s !== sub))}
-                          />
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Price */}
-                <div className="space-y-2">
-                  <Label htmlFor="price">Price ($)</Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    placeholder="0.00"
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    min="0"
-                    step="0.01"
-                  />
-                </div>
-
-                {/* Product Tags & Attributes */}
-                <div className="space-y-2">
-                  <Label>
-                    <div className="flex items-center gap-2">
-                      <Info className="h-4 w-4 text-muted-foreground" />
-                      <span>Product Tags & Attributes</span>
-                    </div>
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Add custom tag..."
-                      value={tagInput}
-                      onChange={(e) => setTagInput(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddTag()}
-                    />
-                    <Button onClick={handleAddTag} size="sm">
-                      Add
-                    </Button>
-                  </div>
-                  <Select
-                    value=""
-                    onValueChange={(value) => {
-                      if (!tags.includes(value)) {
-                        setTags([...tags, value]);
-                      }
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select from common tags" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Cotton">Cotton</SelectItem>
-                      <SelectItem value="Polyester">Polyester</SelectItem>
-                      <SelectItem value="Unisex">Unisex</SelectItem>
-                      <SelectItem value="Eco-Friendly">Eco-Friendly</SelectItem>
-                      <SelectItem value="Limited Edition">Limited Edition</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {tags.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {tags.map((tag) => (
-                        <Badge key={tag} variant="outline" className="gap-1">
-                          {tag}
-                          <X
-                            className="h-3 w-3 cursor-pointer"
-                            onClick={() => handleRemoveTag(tag)}
-                          />
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                  {tags.length === 0 && (
-                    <p className="text-xs text-muted-foreground">No tags selected</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+        {isLoading ? (
+          <div className="mb-6">
+            <div className="h-8 w-64 bg-muted animate-pulse rounded mb-2" />
+            <div className="h-4 w-96 bg-muted animate-pulse rounded mb-2" />
+            <p className="text-sm text-muted-foreground mt-2">
+              {isEditMode ? 'Loading product data...' : 'Preparing form...'}
+            </p>
           </div>
+        ) : (
+          <div className="mb-6">
+            <h1 className="text-3xl font-bold text-foreground">
+              {isEditMode ? 'Edit Product' : 'Add New Product'}
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              {isEditMode 
+                ? 'Update the catalogue product details'
+                : 'Create a catalogue product that merchants can use in their stores'
+              }
+            </p>
+          </div>
+        )}
 
-          {/* Right Column - Product Image & Mockup */}
-          <div className="space-y-6">
-            <Card>
-              <CardContent className="pt-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>Product Image</Label>
-                  {!uploadedImage && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="gap-2"
-                    >
-                      <Upload className="h-4 w-4" />
-                      Upload Image
-                    </Button>
-                  )}
-                  {uploadedImage && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="gap-2 text-primary"
-                    >
-                      Create Mockup
-                    </Button>
-                  )}
+        <Card>
+          <CardContent className="pt-6">
+            <Tabs value={activeStep} onValueChange={setActiveStep} className="w-full">
+              <TabsList className="grid w-full grid-cols-4 md:grid-cols-9 mb-6">
+                <TabsTrigger value="catalogue" className="flex items-center gap-2">
+                  <span className="hidden sm:inline">1.</span> Catalogue
+                </TabsTrigger>
+                <TabsTrigger value="details" className="flex items-center gap-2">
+                  <span className="hidden sm:inline">2.</span> Details
+                </TabsTrigger>
+                <TabsTrigger value="variants" className="flex items-center gap-2">
+                  <span className="hidden sm:inline">3.</span> Variants
+                </TabsTrigger>
+                <TabsTrigger value="design" className="flex items-center gap-2">
+                  <span className="hidden sm:inline">4.</span> Design
+                </TabsTrigger>
+                <TabsTrigger value="gallery" className="flex items-center gap-2">
+                  <span className="hidden sm:inline">5.</span> Gallery
+                </TabsTrigger>
+                <TabsTrigger value="pricing" className="flex items-center gap-2">
+                  <span className="hidden sm:inline">6.</span> Pricing
+                </TabsTrigger>
+                <TabsTrigger value="stocks" className="flex items-center gap-2">
+                  <span className="hidden sm:inline">7.</span> Stocks
+                </TabsTrigger>
+                <TabsTrigger value="options" className="flex items-center gap-2">
+                  <span className="hidden sm:inline">8.</span> Options
+                </TabsTrigger>
+                <TabsTrigger value="shipping" className="flex items-center gap-2">
+                  <span className="hidden sm:inline">9.</span> Shipping
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Step 1: Product Catalogue Info */}
+              <TabsContent value="catalogue" className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Step 1: Product Catalogue Info</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Store data for merchants - product name, description, category, tags, and base price
+                  </p>
                 </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
+                <ProductCatalogueSection
+                  data={catalogueData}
+                  onChange={setCatalogueData}
                 />
-
-                {/* Image Upload Area */}
-                <div className="border-2 border-dashed border-border rounded-lg p-8 min-h-[400px] flex items-center justify-center bg-muted/20">
-                  {!uploadedImage ? (
-                    <div className="text-center space-y-4">
-                      <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Upload className="h-8 w-8 text-primary" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Drag and drop your image here, or click to browse
-                        </p>
-                        <Button
-                          variant="link"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="mt-2"
-                        >
-                          Browse Files
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="w-full space-y-4">
-                      <div className="relative bg-white rounded-lg p-4 flex items-center justify-center min-h-[300px]">
-                        <img
-                          src={uploadedImage}
-                          alt="Product"
-                          style={{ 
-                            transform: `rotate(${rotation}deg)`,
-                            maxWidth: '100%',
-                            maxHeight: '300px',
-                            objectFit: 'contain'
-                          }}
-                          className="transition-transform duration-200"
-                        />
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          className="absolute top-2 right-2"
-                          onClick={handleRemoveImage}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-
-                      {/* File Info */}
-                      {imageSize && (
-                        <p className="text-xs text-center text-muted-foreground">
-                          {uploadedImage.split('/').pop()?.split(';')[0].split(',')[0]} • {imageSize.width} × {imageSize.height} px
-                        </p>
-                      )}
-
-                      {/* Success Message */}
-                      {hasTransparency && (
-                        <Alert className="bg-primary/5 border-primary/20">
-                          <CheckCircle2 className="h-4 w-4 text-primary" />
-                          <AlertDescription className="text-primary">
-                            <p className="font-medium">Perfect! Transparency Detected</p>
-                            <p className="text-xs mt-1 text-muted-foreground">
-                              Your PNG has a transparent background, which is ideal for product mockups.
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              You can proceed to the "Create Mockup" tab to see your design on the product.
-                            </p>
-                          </AlertDescription>
-                        </Alert>
-                      )}
-
-                      {/* Image Requirements */}
-                      <div className="bg-accent/50 rounded-lg p-4 space-y-2">
-                        <div className="flex items-start gap-2">
-                          <Info className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                          <div className="space-y-1 text-xs text-muted-foreground">
-                            <p className="font-medium text-foreground">Image Requirements:</p>
-                            <ul className="space-y-1 list-disc list-inside">
-                              <li>Format: PNG files only (png extension)</li>
-                              <li>Size: Maximum 15MB</li>
-                              <li>
-                                Transparency: Must support transparency which is ideal for product mockups
-                              </li>
-                              <li>Resolution: Recommended minimum 3000×4000 pixels for best quality</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                <div className="flex justify-end pt-4">
+                  <Button
+                    onClick={() => setActiveStep('details')}
+                    className="gap-2"
+                  >
+                    Next: Details
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
                 </div>
+              </TabsContent>
 
-                {/* Mockup Controls */}
-                {uploadedImage && (
-                  <>
-                    <Separator />
-                    
-                    {/* Placeholder Shape */}
-                    <div className="space-y-2">
-                      <Label>Placeholder Shape</Label>
-                      <div className="grid grid-cols-7 gap-2">
-                        {(Object.keys(shapeIcons) as PlaceholderShape[]).map((shape) => {
-                          const Icon = shapeIcons[shape];
-                          return (
-                            <Button
-                              key={shape}
-                              variant={placeholderShape === shape ? "default" : "outline"}
-                              size="sm"
-                              onClick={() => setPlaceholderShape(shape)}
-                              className="flex flex-col items-center gap-1 h-auto py-2 px-1"
-                            >
-                              <Icon className="h-4 w-4" />
-                              <span className="text-[10px] capitalize truncate w-full text-center">
-                                {shape === 'custom' ? 'Cstm' : shape.substring(0, 4)}
-                              </span>
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    </div>
+              {/* Step 2: Product Details */}
+              <TabsContent value="details" className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Step 2: Product Details</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Enter product identification codes and barcodes (optional)
+                  </p>
+                </div>
+                <ProductDetailsSection
+                  data={detailsData}
+                  onChange={setDetailsData}
+                />
+                <div className="flex justify-between pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveStep('catalogue')}
+                    className="gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    onClick={() => setActiveStep('variants')}
+                    className="gap-2"
+                  >
+                    Next: Variants
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </TabsContent>
 
-                    {/* View Mode */}
-                    <div className="space-y-2">
-                      <div className="flex gap-2">
-                        <Button
-                          variant={viewMode === 'front' ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setViewMode('front')}
-                          className="flex-1"
-                        >
-                          Front View
-                        </Button>
-                        <Button
-                          variant={viewMode === 'back' ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setViewMode('back')}
-                          className="flex-1"
-                        >
-                          Back View
-                        </Button>
-                        <Button
-                          variant={viewMode === 'side' ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setViewMode('side')}
-                          className="flex-1"
-                        >
-                          Side View
-                        </Button>
-                      </div>
-                    </div>
+              {/* Step 3: Product Variants */}
+              <TabsContent value="variants" className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Step 3: Product Variants</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Select available sizes and colors. Variants will be auto-generated with SKUs.
+                  </p>
+                </div>
+                <ProductVariantsSection
+                  availableSizes={availableSizes}
+                  availableColors={availableColors}
+                  variants={variants}
+                  onSizesChange={setAvailableSizes}
+                  onColorsChange={setAvailableColors}
+                  onVariantsChange={setVariants}
+                  baseSku={catalogueData.name.toUpperCase().replace(/\s+/g, '-') || 'PROD'}
+                  categoryId={catalogueData.categoryId}
+                  subcategoryId={catalogueData.subcategoryIds[0]}
+                />
+                <div className="flex justify-between pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveStep('details')}
+                    className="gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    onClick={() => setActiveStep('design')}
+                    className="gap-2"
+                  >
+                    Next: Design
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </TabsContent>
 
-                    {/* Toggle Controls */}
-                    <div className="flex gap-4">
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          id="hideAreas"
-                          checked={hideAreas}
-                          onCheckedChange={setHideAreas}
-                        />
-                        <Label htmlFor="hideAreas" className="text-sm flex items-center gap-1 cursor-pointer">
-                          {hideAreas ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          Hide Areas
-                        </Label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          id="magneticCanvas"
-                          checked={magneticCanvas}
-                          onCheckedChange={setMagneticCanvas}
-                        />
-                        <Label htmlFor="magneticCanvas" className="text-sm flex items-center gap-1 cursor-pointer">
-                          <Grid3x3 className="h-4 w-4" />
-                          Magnetic Canvas
-                        </Label>
-                      </div>
-                    </div>
+              {/* Step 4: Mockup & Print Areas */}
+              <TabsContent value="design" className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Step 4: Mockup & Print Area Editor</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Upload mockup images and define print areas for each view (Front, Back, Left, Right)
+                  </p>
+                </div>
+                <ProductImageConfigurator
+                  views={designData.views}
+                  onViewsChange={(views) => setDesignData({ ...designData, views })}
+                  physicalWidth={20} // Default product width in inches
+                  physicalHeight={24} // Default product height in inches
+                  physicalLength={18} // Default product length in inches (for left/right views)
+                  unit="in"
+                />
+                <div className="flex justify-between pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveStep('variants')}
+                    className="gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    onClick={() => setActiveStep('gallery')}
+                    className="gap-2"
+                  >
+                    Next: Gallery
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </TabsContent>
 
-                    {/* Rotation Controls */}
-                    <div className="space-y-2">
-                      <Label>Rotation</Label>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRotate(-90)}
-                        >
-                          <RotateCcw className="h-4 w-4 mr-1" />
-                          -90°
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRotate(90)}
-                        >
-                          <RotateCw className="h-4 w-4 mr-1" />
-                          +90°
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setRotation(0)}
-                        >
-                          0°
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setRotation(180)}
-                        >
-                          ±180°
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleResetRotation}
-                        >
-                          Reset
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Current rotation: {rotation}°
-                      </p>
-                    </div>
+              {/* Step 5: Product Gallery Images */}
+              <TabsContent value="gallery" className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Step 5: Product Gallery Images</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Upload customer-facing product images (size charts, flat shots, lifestyle photos, etc.)
+                  </p>
+                </div>
+                <ProductGallerySection
+                  images={galleryImages}
+                  onChange={setGalleryImages}
+                />
+                <div className="flex justify-between pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveStep('design')}
+                    className="gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    onClick={() => setActiveStep('pricing')}
+                    className="gap-2"
+                  >
+                    Next: Pricing
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </TabsContent>
 
-                    <Separator />
+              {/* Step 6: Pricing */}
+              <TabsContent value="pricing" className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Step 6: Pricing</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Set retail prices, tax rules, cost price, and optional price per unit
+                  </p>
+                </div>
+                <ProductPricingSection
+                  data={pricingData}
+                  onChange={setPricingData}
+                />
+                <div className="flex justify-between pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveStep('gallery')}
+                    className="gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    onClick={() => setActiveStep('stocks')}
+                    className="gap-2"
+                  >
+                    Next: Stocks
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </TabsContent>
 
-                    {/* Color Variants Preview */}
-                    <div className="space-y-2">
-                      <Label>Color Variants Preview</Label>
-                      <div className="bg-muted/30 rounded-lg p-4 text-center text-sm text-muted-foreground">
-                        {selectedColors.length > 0 ? (
-                          <div className="flex flex-wrap gap-3 justify-center">
-                            {selectedColors.map((color) => {
-                              const [name, hex] = color.split(':');
-                              return (
-                                <div key={color} className="text-center">
-                                  <div
-                                    className="w-12 h-12 rounded-md border-2 border-border mb-1 shadow-sm"
-                                    style={{ backgroundColor: hex }}
-                                  />
-                                  <p className="text-xs">{name}</p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          'No color variants selected'
-                        )}
-                      </div>
-                    </div>
+              {/* Step 7: Stocks/Inventory */}
+              <TabsContent value="stocks" className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Step 7: Stocks & Inventory</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Configure stock management, minimum quantities, and low stock alerts
+                  </p>
+                </div>
+                <ProductStocksSection
+                  data={stocksData}
+                  onChange={setStocksData}
+                />
+                <div className="flex justify-between pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveStep('pricing')}
+                    className="gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    onClick={() => setActiveStep('options')}
+                    className="gap-2"
+                  >
+                    Next: Options
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </TabsContent>
 
-                    {/* Product Colors */}
-                    <div className="space-y-2">
-                      <Label>
-                        <div className="flex items-center gap-2">
-                          <Info className="h-4 w-4 text-muted-foreground" />
-                          <span>Product Colors</span>
-                        </div>
-                      </Label>
-                      <div className="flex gap-2">
-                        <div className="w-10 h-10 rounded border overflow-hidden flex-shrink-0">
-                          <input
-                            type="color"
-                            value={colorInput}
-                            onChange={(e) => setColorInput(e.target.value)}
-                            className="w-full h-full cursor-pointer"
-                          />
-                        </div>
-                        <Input
-                          placeholder="Color name (e.g., Baby Red)"
-                          value={colorNameInput}
-                          onChange={(e) => setColorNameInput(e.target.value)}
-                          onKeyPress={(e) => e.key === 'Enter' && handleAddColor()}
-                          className="flex-1"
-                        />
-                        <Button onClick={handleAddColor} size="sm">
-                          Add
-                        </Button>
-                      </div>
-                      <Select
-                        value=""
-                        onValueChange={(value) => {
-                          const color = commonColors.find(c => c.name === value);
-                          if (color) handleAddCommonColor(color);
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select from common colors" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {commonColors.map((color) => (
-                            <SelectItem key={color.name} value={color.name}>
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="w-4 h-4 rounded border"
-                                  style={{ backgroundColor: color.hex }}
-                                />
-                                {color.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {selectedColors.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {selectedColors.map((color) => {
-                            const [name, hex] = color.split(':');
-                            return (
-                              <Badge key={color} variant="outline" className="gap-2">
-                                <div
-                                  className="w-3 h-3 rounded-full border"
-                                  style={{ backgroundColor: hex }}
-                                />
-                                {name}
-                                <X
-                                  className="h-3 w-3 cursor-pointer hover:text-destructive"
-                                  onClick={() => handleRemoveColor(color)}
-                                />
-                              </Badge>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {selectedColors.length === 0 && (
-                        <p className="text-xs text-muted-foreground">No colors selected</p>
-                      )}
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+              {/* Step 8: Product Options */}
+              <TabsContent value="options" className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Step 8: Product Options</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Configure product visibility, availability, price display, and supplier associations
+                  </p>
+                </div>
+                <ProductOptionsSection
+                  data={optionsData}
+                  onChange={setOptionsData}
+                />
+                <div className="flex justify-between pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveStep('stocks')}
+                    className="gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    onClick={() => setActiveStep('shipping')}
+                    className="gap-2"
+                  >
+                    Next: Shipping
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </TabsContent>
 
-        {/* Create Product Button */}
-        <div className="flex justify-end mt-6">
-          <Button
-            size="lg"
-            onClick={handleCreateProduct}
-            className="min-w-[200px]"
-          >
-            Create Product
-          </Button>
-        </div>
+              {/* Step 9: Shipping & Packaging */}
+              <TabsContent value="shipping" className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Step 9: Shipping & Packaging</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Package dimensions and weight for courier APIs and Shopify shipping
+                  </p>
+                </div>
+                <ShippingPackagingSection
+                  data={shippingData}
+                  onChange={setShippingData}
+                />
+                <div className="flex justify-between pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveStep('options')}
+                    className="gap-2"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Back
+                  </Button>
+                  <Button
+                    size="lg"
+                    onClick={handleCreateProduct}
+                    className="min-w-[200px]"
+                    disabled={isLoading}
+                  >
+                    {isEditMode ? 'Update Product' : 'Create Product'}
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

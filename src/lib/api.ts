@@ -259,7 +259,557 @@ export const authApi = {
         success: boolean;
         count: number;
     }>('/auth/users/count');
-  }
+  },
+  
+};
+
+// Product API methods
+export const productApi = {
+  create: async (productData: any) => {
+    // Make direct fetch to preserve full response structure
+    const token = getToken();
+    const response = await fetch(`${API_BASE_URL}/products`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      credentials: 'include',
+      body: JSON.stringify(productData),
+    });
+
+    // Handle 401 with token refresh
+    if (response.status === 401 && token) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        const retryResponse = await fetch(`${API_BASE_URL}/products`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${newToken}`,
+          },
+          credentials: 'include',
+          body: JSON.stringify(productData),
+        });
+        if (!retryResponse.ok) {
+          const errorData = await retryResponse.json().catch(() => ({}));
+          throw new ApiError(
+            errorData.message || 'An error occurred',
+            retryResponse.status,
+            errorData.errors
+          );
+        }
+        const data = await retryResponse.json();
+        return data;
+      } else {
+        removeTokens();
+        throw new ApiError('Session expired. Please login again.', 401);
+      }
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new ApiError(
+        errorData.message || 'An error occurred',
+        response.status,
+        errorData.errors
+      );
+    }
+
+    const data = await response.json();
+    // Return full response to preserve success field
+    return data;
+  },
+
+  getAll: async (params?: { page?: number; limit?: number; search?: string; isActive?: boolean }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.search && params.search.trim()) {
+      queryParams.append('search', params.search.trim());
+    }
+    // Only append isActive if it's explicitly true or false, not undefined
+    if (params?.isActive === true || params?.isActive === false) {
+      queryParams.append('isActive', params.isActive.toString());
+    }
+    
+    const query = queryParams.toString();
+    const token = getToken();
+    
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for list requests
+    
+    try {
+      // Use apiRequest but get the raw response to preserve pagination
+      const response = await fetch(`${API_BASE_URL}/products${query ? `?${query}` : ''}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        signal: controller.signal, // Add abort signal
+      });
+      
+      clearTimeout(timeoutId);
+
+      // Handle 401 with token refresh
+      if (response.status === 401 && token) {
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          // Create new controller for retry
+          const retryController = new AbortController();
+          const retryTimeoutId = setTimeout(() => retryController.abort(), 15000);
+          
+          try {
+            const retryResponse = await fetch(`${API_BASE_URL}/products${query ? `?${query}` : ''}`, {
+              method: 'GET',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${newToken}`,
+              },
+              signal: retryController.signal,
+            });
+            
+            clearTimeout(retryTimeoutId);
+            
+            if (!retryResponse.ok) {
+              const errorData = await retryResponse.json().catch(() => ({}));
+              throw new ApiError(
+                errorData.message || 'An error occurred',
+                retryResponse.status,
+                errorData.errors
+              );
+            }
+            const data = await retryResponse.json();
+            return {
+              success: data.success !== false,
+              data: data.data || [],
+              pagination: data.pagination || {
+                page: parseInt(String(params?.page || 1)),
+                limit: parseInt(String(params?.limit || 20)),
+                total: 0,
+                pages: 0
+              }
+            };
+          } catch (retryError: any) {
+            clearTimeout(retryTimeoutId);
+            if (retryError.name === 'AbortError') {
+              throw new ApiError('Request timeout - server is taking too long to respond', 408);
+            }
+            throw retryError;
+          }
+        } else {
+          removeTokens();
+          throw new ApiError('Session expired. Please login again.', 401);
+        }
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new ApiError(
+          errorData.message || 'An error occurred',
+          response.status,
+          errorData.errors
+        );
+      }
+
+      const data = await response.json();
+      // Return the full response object including success, data, and pagination
+      return {
+        success: data.success !== false,
+        data: data.data || [],
+        pagination: data.pagination || {
+          page: parseInt(String(params?.page || 1)),
+          limit: parseInt(String(params?.limit || 20)),
+          total: 0,
+          pages: 0
+        }
+      };
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new ApiError('Request timeout - server is taking too long to respond', 408);
+      }
+      throw error;
+    }
+  },
+
+  getById: async (id: string) => {
+    // Make direct fetch to preserve full response structure
+    const token = getToken();
+    
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/products/${id}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        credentials: 'include',
+        signal: controller.signal, // Add abort signal
+      });
+
+      clearTimeout(timeoutId);
+
+      // Handle 401 with token refresh
+      if (response.status === 401 && token) {
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          // Create new controller for retry
+          const retryController = new AbortController();
+          const retryTimeoutId = setTimeout(() => retryController.abort(), 10000);
+          
+          try {
+            const retryResponse = await fetch(`${API_BASE_URL}/products/${id}`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${newToken}`,
+              },
+              credentials: 'include',
+              signal: retryController.signal,
+            });
+            
+            clearTimeout(retryTimeoutId);
+            
+            if (!retryResponse.ok) {
+              const errorData = await retryResponse.json().catch(() => ({}));
+              throw new ApiError(
+                errorData.message || 'An error occurred',
+                retryResponse.status,
+                errorData.errors
+              );
+            }
+            const data = await retryResponse.json();
+            return data;
+          } catch (retryError: any) {
+            clearTimeout(retryTimeoutId);
+            if (retryError.name === 'AbortError') {
+              throw new ApiError('Request timeout - server is taking too long to respond', 408);
+            }
+            throw retryError;
+          }
+        } else {
+          removeTokens();
+          throw new ApiError('Session expired. Please login again.', 401);
+        }
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new ApiError(
+          errorData.message || 'An error occurred',
+          response.status,
+          errorData.errors
+        );
+      }
+
+      const data = await response.json();
+      // Return full response to preserve success and data fields
+      return data;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new ApiError('Request timeout - server is taking too long to respond', 408);
+      }
+      throw error;
+    }
+  },
+
+  update: async (id: string, productData: any) => {
+    // Make direct fetch to preserve full response structure
+    const token = getToken();
+    const response = await fetch(`${API_BASE_URL}/products/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      credentials: 'include',
+      body: JSON.stringify(productData),
+    });
+
+    // Handle 401 with token refresh
+    if (response.status === 401 && token) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        const retryResponse = await fetch(`${API_BASE_URL}/products/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${newToken}`,
+          },
+          credentials: 'include',
+          body: JSON.stringify(productData),
+        });
+        if (!retryResponse.ok) {
+          const errorData = await retryResponse.json().catch(() => ({}));
+          throw new ApiError(
+            errorData.message || 'An error occurred',
+            retryResponse.status,
+            errorData.errors
+          );
+        }
+        const data = await retryResponse.json();
+        return data;
+      } else {
+        removeTokens();
+        throw new ApiError('Session expired. Please login again.', 401);
+      }
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new ApiError(
+        errorData.message || 'An error occurred',
+        response.status,
+        errorData.errors
+      );
+    }
+
+    const data = await response.json();
+    // Return full response to preserve success and data fields
+    return data;
+  },
+
+  delete: async (id: string) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+    }>(`/products/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+
+  getCatalogProducts: async (params?: { page?: number; limit?: number; category?: string; subcategory?: string; search?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.category) queryParams.append('category', params.category);
+    if (params?.subcategory) queryParams.append('subcategory', params.subcategory);
+    if (params?.search) queryParams.append('search', params.search);
+    
+    const queryString = queryParams.toString();
+    const url = `/products/catalog/active${queryString ? `?${queryString}` : ''}`;
+    
+    // Public endpoint - no auth required
+    const response = await fetch(`${API_BASE_URL}${url}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new ApiError(errorData.message || 'An error occurred', response.status, errorData.errors);
+    }
+
+    return await response.json();
+  },
+};
+
+// Product Variant API (for variants stored in separate collection)
+export const variantApi = {
+  // Get all variants for a specific product
+  getByProductId: async (productId: string) => {
+    return apiRequest<{
+      success: boolean;
+      data: any[];
+      count: number;
+    }>(`/variants/product/${productId}`, {
+      method: 'GET',
+    });
+  },
+
+  // Get single variant by ID
+  getById: async (id: string) => {
+    return apiRequest(`/variants/${id}`, {
+      method: 'GET',
+    });
+  },
+
+  // Create a new variant
+  create: async (data: {
+    productId: string;
+    id: string;
+    size: string;
+    color: string;
+    sku: string;
+    isActive?: boolean;
+  }) => {
+    return apiRequest('/variants', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Create multiple variants at once
+  createBulk: async (productId: string, variants: Array<{
+    id: string;
+    size: string;
+    color: string;
+    sku: string;
+    isActive?: boolean;
+  }>) => {
+    return apiRequest('/variants/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ productId, variants }),
+    });
+  },
+
+  // Update a variant
+  update: async (id: string, data: {
+    size?: string;
+    color?: string;
+    sku?: string;
+    isActive?: boolean;
+  }) => {
+    return apiRequest(`/variants/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Delete a variant
+  delete: async (id: string) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+    }>(`/variants/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Delete all variants for a product
+  deleteByProductId: async (productId: string) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      deletedCount: number;
+    }>(`/variants/product/${productId}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// Variant Options API
+export const variantOptionsApi = {
+  // Get all custom variant options (filtered by category/subcategory)
+  getAll: async (params?: { categoryId?: string; subcategoryId?: string; optionType?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
+    if (params?.subcategoryId) queryParams.append('subcategoryId', params.subcategoryId);
+    if (params?.optionType) queryParams.append('optionType', params.optionType);
+    
+    const queryString = queryParams.toString();
+    const url = `/variant-options${queryString ? `?${queryString}` : ''}`;
+    
+    return apiRequest(url, { method: 'GET' });
+  },
+
+  // Create a new custom variant option
+  create: async (data: {
+    categoryId: string;
+    subcategoryId?: string;
+    optionType: 'size' | 'color';
+    value: string;
+    colorHex?: string;
+  }) => {
+    return apiRequest('/variant-options', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Update a custom variant option
+  update: async (id: string, data: {
+    value?: string;
+    colorHex?: string;
+    isActive?: boolean;
+  }) => {
+    return apiRequest(`/variant-options/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Delete (soft delete) a custom variant option
+  delete: async (id: string) => {
+    return apiRequest(`/variant-options/${id}`, { method: 'DELETE' });
+  },
+
+  // Get statistics about variant options usage
+  getStats: async () => {
+    return apiRequest('/variant-options/stats', { method: 'GET' });
+  },
+};
+
+// Catalogue Fields API
+export const catalogueFieldsApi = {
+  // Get all catalogue field templates (filtered by category/subcategory)
+  getAll: async (params?: { categoryId?: string; subcategoryId?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
+    if (params?.subcategoryId) queryParams.append('subcategoryId', params.subcategoryId);
+    
+    const queryString = queryParams.toString();
+    const url = `/catalogue-fields${queryString ? `?${queryString}` : ''}`;
+    
+    return apiRequest(url, { method: 'GET' });
+  },
+
+  // Create a new catalogue field template
+  create: async (data: {
+    categoryId: string;
+    subcategoryId?: string;
+    key: string;
+    label: string;
+    type: 'text' | 'textarea' | 'number' | 'select';
+    options?: string[];
+    required?: boolean;
+    placeholder?: string;
+    unit?: string;
+  }) => {
+    return apiRequest('/catalogue-fields', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Update a catalogue field template
+  update: async (id: string, data: {
+    label?: string;
+    type?: 'text' | 'textarea' | 'number' | 'select';
+    options?: string[];
+    required?: boolean;
+    placeholder?: string;
+    unit?: string;
+    isActive?: boolean;
+  }) => {
+    return apiRequest(`/catalogue-fields/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Delete a catalogue field template
+  delete: async (id: string) => {
+    return apiRequest(`/catalogue-fields/${id}`, { method: 'DELETE' });
+  },
+
+  // Get statistics about catalogue fields
+  getStats: async () => {
+    return apiRequest('/catalogue-fields/stats', { method: 'GET' });
+  },
 };
 
 // Generic API request method
@@ -284,5 +834,5 @@ export const api = {
     apiRequest<T>(endpoint, { method: 'DELETE' }),
 };
 
-export { ApiError, getToken, removeTokens };
+export { ApiError, getToken, removeTokens, apiRequest };
 

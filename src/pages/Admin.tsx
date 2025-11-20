@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Product, Order, Store as StoreType } from '@/types';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -69,21 +70,43 @@ import {
   Clock,
   ChevronRight,
   Wallet,
-  Shield
+  Shield,
+  Plus
 } from 'lucide-react';
 import { WalletManagement } from '@/components/admin/WalletManagement';
 import { InvoiceManagement } from '@/components/admin/InvoiceManagement';
 import { AuditLogs } from '@/components/admin/AuditLogs';
 import { PayoutManagement } from '@/components/admin/PayoutManagement';
+import { productApi } from '@/lib/api';
+import { toast } from 'sonner';
+import { CatalogToolbar } from '@/components/admin/CatalogToolbar';
+import { BaseProductsTable } from '@/components/admin/BaseProductsTable';
 
 const Admin = () => {
   const { user, logout } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(() => {
+    // Check URL params for tab
+    const tabParam = searchParams.get('tab');
+    return tabParam || 'overview';
+  });
   const [selectedTimeRange, setSelectedTimeRange] = useState('month');
   const [announcementText, setAnnouncementText] = useState('');
   const [totalUsers, setTotalUsers] = useState<number>(0);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  
+  // Products from database
+  const [databaseProducts, setDatabaseProducts] = useState<any[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [productsSearchQuery, setProductsSearchQuery] = useState('');
+  const [productsPage, setProductsPage] = useState(1);
+  const [productsTotal, setProductsTotal] = useState(0);
+  const [productsCount, setProductsCount] = useState<number>(0); // For stats display
+  const [isLoadingProductsCount, setIsLoadingProductsCount] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
 
   // Admin sees ALL data across platform (from localStorage)
   const allStores = JSON.parse(localStorage.getItem('shelfmerch_all_stores') || '[]') as StoreType[];
@@ -126,6 +149,142 @@ const Admin = () => {
     }
   }, [user?.role, allStores.length]);
 
+  // Fetch products count from backend for stats
+  useEffect(() => {
+    const fetchProductsCount = async () => {
+      if (user?.role !== 'admin') {
+        return;
+      }
+
+      setIsLoadingProductsCount(true);
+      try {
+        // Fetch with minimal limit to get just the pagination info
+        const response = await productApi.getAll({
+          page: 1,
+          limit: 1,
+        });
+        
+        if (response && response.success !== false) {
+          const pagination = response.pagination || { total: 0 };
+          setProductsCount(pagination.total || 0);
+        } else {
+          // Fallback to localStorage count if API fails
+          setProductsCount(totalProducts);
+        }
+      } catch (error) {
+        console.error('Failed to fetch products count:', error);
+        // Fallback to localStorage count if API fails
+        setProductsCount(totalProducts);
+      } finally {
+        setIsLoadingProductsCount(false);
+      }
+    };
+
+    fetchProductsCount();
+  }, [user?.role, totalProducts]);
+
+  // Filter and sort products
+  const filteredAndSortedProducts = useMemo(() => {
+    let filtered = [...databaseProducts];
+
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'active') {
+        filtered = filtered.filter(p => p.isActive);
+      } else if (statusFilter === 'archived') {
+        filtered = filtered.filter(p => !p.isActive);
+      }
+      // TODO: Add draft status filtering when draft status is implemented
+    }
+
+    // Apply category filter (placeholder - can be enhanced when categories are added)
+    // For now, category filter doesn't do anything
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'oldest':
+          return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+        case 'price-low':
+          return (a.catalogue?.basePrice || 0) - (b.catalogue?.basePrice || 0);
+        case 'price-high':
+          return (b.catalogue?.basePrice || 0) - (a.catalogue?.basePrice || 0);
+        case 'newest':
+        default:
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      }
+    });
+
+    return filtered;
+  }, [databaseProducts, statusFilter, categoryFilter, sortBy]);
+
+  // Fetch products from database
+  const fetchProducts = useCallback(async () => {
+    if (activeTab !== 'products') {
+      return;
+    }
+    
+    if (user?.role !== 'admin') {
+      return;
+    }
+    
+    console.log('Fetching products from database...', { productsPage, productsSearchQuery });
+    setIsLoadingProducts(true);
+    try {
+      const response = await productApi.getAll({
+        page: productsPage,
+        limit: 20,
+        search: productsSearchQuery.trim() || undefined,
+      });
+      
+      console.log('Products API response:', response);
+      
+      // Handle response structure
+      if (response && response.success !== false) {
+        const productsArray = Array.isArray(response.data) ? response.data : [];
+        const pagination = response.pagination || { total: productsArray.length };
+        
+        console.log(`Loaded ${productsArray.length} products out of ${pagination.total} total`);
+        setDatabaseProducts(productsArray);
+        setProductsTotal(pagination.total || productsArray.length);
+      } else {
+        console.warn('API response indicates failure:', response);
+        setDatabaseProducts([]);
+        setProductsTotal(0);
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch products:', error);
+      toast.error(error.message || 'Failed to load products from database');
+      setDatabaseProducts([]);
+      setProductsTotal(0);
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }, [activeTab, user?.role, productsPage, productsSearchQuery]);
+
+  // Update URL when tab changes
+  useEffect(() => {
+    if (activeTab) {
+      setSearchParams({ tab: activeTab }, { replace: true });
+    }
+  }, [activeTab, setSearchParams]);
+
+  useEffect(() => {
+    // Fetch immediately when tab becomes active or page changes
+    if (activeTab === 'products' && user?.role === 'admin') {
+      if (productsSearchQuery) {
+        // Debounce search query
+        const timeoutId = setTimeout(() => {
+          fetchProducts();
+        }, 500);
+        return () => clearTimeout(timeoutId);
+      } else {
+        // Fetch immediately for page changes or initial load
+        fetchProducts();
+      }
+    }
+  }, [activeTab, productsPage, productsSearchQuery, user?.role, fetchProducts]);
+
   const stats = [
     { 
       label: 'Monthly Revenue', 
@@ -142,8 +301,8 @@ const Admin = () => {
       icon: Store 
     },
     { 
-      label: 'Total Products', 
-      value: totalProducts.toString(), 
+      label: 'Base Products', 
+      value: isLoadingProductsCount ? '...' : (productsCount > 0 ? productsCount.toString() : totalProducts.toString()), 
       change: '+8%', 
       trend: 'up',
       icon: Package 
@@ -275,111 +434,197 @@ const Admin = () => {
           <p className="text-xs font-semibold text-primary">SUPER ADMIN</p>
         </div>
 
-        <nav className="space-y-1">
-          <Button 
-            variant={activeTab === 'overview' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('overview')}
-          >
-            <TrendingUp className="mr-2 h-4 w-4" />
-            Overview
-          </Button>
-          <Button 
-            variant={activeTab === 'stores' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('stores')}
-          >
-            <Store className="mr-2 h-4 w-4" />
-            Active Stores
-          </Button>
-          <Button 
-            variant={activeTab === 'users' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('users')}
-          >
-            <Users className="mr-2 h-4 w-4" />
-            User Management
-          </Button>
-          <Button 
-            variant={activeTab === 'products' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('products')}
-          >
-            <Package className="mr-2 h-4 w-4" />
-            Product Catalog
-          </Button>
-          <Button 
-            variant={activeTab === 'orders' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('orders')}
-          >
-            <ShoppingBag className="mr-2 h-4 w-4" />
-            Orders
-          </Button>
-          <Button 
-            variant={activeTab === 'fulfillment' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('fulfillment')}
-          >
-            <Truck className="mr-2 h-4 w-4" />
-            Fulfillment
-          </Button>
-          <Button 
-            variant={activeTab === 'wallets' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('wallets')}
-          >
-            <Wallet className="mr-2 h-4 w-4" />
-            Wallets
-          </Button>
-          <Button 
-            variant={activeTab === 'invoices' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('invoices')}
-          >
-            <FileText className="mr-2 h-4 w-4" />
-            Invoices
-          </Button>
-          <Button 
-            variant={activeTab === 'audit' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('audit')}
-          >
-            <Shield className="mr-2 h-4 w-4" />
-            Audit Logs
-          </Button>
-          <Button 
-            variant={activeTab === 'support' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('support')}
-          >
-            <MessageSquare className="mr-2 h-4 w-4" />
-            Support
-          </Button>
-          <Button 
-            variant={activeTab === 'marketing' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('marketing')}
-          >
-            <Megaphone className="mr-2 h-4 w-4" />
-            Marketing
-          </Button>
-          <Button 
-            variant={activeTab === 'analytics' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('analytics')}
-          >
-            <BarChart3 className="mr-2 h-4 w-4" />
-            Analytics
-          </Button>
-          <Button 
-            variant={activeTab === 'settings' ? 'secondary' : 'ghost'} 
-            className="w-full justify-start"
-            onClick={() => setActiveTab('settings')}
-          >
-            <Settings className="mr-2 h-4 w-4" />
-            Platform Settings
-          </Button>
+        <nav className="space-y-6">
+          {/* Core */}
+          <div className="space-y-1">
+            <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              Core
+            </p>
+            <Button 
+              variant={activeTab === 'overview' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'overview' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('overview')}
+            >
+              <TrendingUp className="mr-2 h-4 w-4" />
+              Overview
+            </Button>
+            <Button 
+              variant={activeTab === 'products' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start relative",
+                activeTab === 'products' && "bg-secondary font-semibold before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-primary before:rounded-r"
+              )}
+              onClick={() => setActiveTab('products')}
+            >
+              <Package className="mr-2 h-4 w-4" />
+              Product Catalog
+            </Button>
+            <Button 
+              variant={activeTab === 'orders' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'orders' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('orders')}
+            >
+              <ShoppingBag className="mr-2 h-4 w-4" />
+              Orders
+            </Button>
+            <Button 
+              variant={activeTab === 'fulfillment' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'fulfillment' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('fulfillment')}
+            >
+              <Truck className="mr-2 h-4 w-4" />
+              Fulfillment
+            </Button>
+          </div>
+
+          {/* Finance */}
+          <div className="space-y-1">
+            <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              Finance
+            </p>
+            <Button 
+              variant={activeTab === 'wallets' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'wallets' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('wallets')}
+            >
+              <Wallet className="mr-2 h-4 w-4" />
+              Wallets
+            </Button>
+            <Button 
+              variant={activeTab === 'invoices' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'invoices' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('invoices')}
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Invoices
+            </Button>
+          </div>
+
+          {/* Platform */}
+          <div className="space-y-1">
+            <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              Platform
+            </p>
+            <Button 
+              variant={activeTab === 'stores' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'stores' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('stores')}
+            >
+              <Store className="mr-2 h-4 w-4" />
+              Active Stores
+            </Button>
+            <Button 
+              variant={activeTab === 'users' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'users' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('users')}
+            >
+              <Users className="mr-2 h-4 w-4" />
+              User Management
+            </Button>
+            <Button 
+              variant={activeTab === 'settings' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'settings' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('settings')}
+            >
+              <Settings className="mr-2 h-4 w-4" />
+              Platform Settings
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
+              asChild
+            >
+              <Link to="/admin/variant-options">
+                <Package className="mr-2 h-4 w-4" />
+                Variant Options
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
+              asChild
+            >
+              <Link to="/admin/catalogue-fields">
+                <FileText className="mr-2 h-4 w-4" />
+                Catalogue Fields
+              </Link>
+            </Button>
+            <Button 
+              variant={activeTab === 'audit' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'audit' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('audit')}
+            >
+              <Shield className="mr-2 h-4 w-4" />
+              Audit Logs
+            </Button>
+          </div>
+
+          {/* Insights & Marketing */}
+          <div className="space-y-1">
+            <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              Insights
+            </p>
+            <Button 
+              variant={activeTab === 'analytics' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'analytics' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('analytics')}
+            >
+              <BarChart3 className="mr-2 h-4 w-4" />
+              Analytics
+            </Button>
+            <Button 
+              variant={activeTab === 'marketing' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'marketing' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('marketing')}
+            >
+              <Megaphone className="mr-2 h-4 w-4" />
+              Marketing
+            </Button>
+            <Button 
+              variant={activeTab === 'support' ? 'secondary' : 'ghost'} 
+              className={cn(
+                "w-full justify-start",
+                activeTab === 'support' && "bg-secondary font-semibold"
+              )}
+              onClick={() => setActiveTab('support')}
+            >
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Support
+            </Button>
+          </div>
         </nav>
       </aside>
 
@@ -741,85 +986,118 @@ const Admin = () => {
           {/* Products Tab */}
           {activeTab === 'products' && (
             <>
-              <div className="flex items-center justify-between mb-8">
+              {/* Page Header */}
+              <div className="flex items-center justify-between mb-6">
                 <div>
                   <h1 className="text-3xl font-bold">Product Catalog</h1>
                   <p className="text-muted-foreground mt-1">
-                    Manage platform-wide product offerings
+                    Manage platform-wide base products for merchants
                   </p>
                 </div>
-                <Button asChild>
-                  <Link to="/admin/products/new">Add Fake Product</Link>
+                <Button asChild className="gap-2">
+                  <Link to="/admin/products/new">
+                    <Plus className="h-4 w-4" />
+                    Add Base Product
+                  </Link>
                 </Button>
               </div>
 
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>All Products ({allProducts.length})</CardTitle>
-                      <CardDescription>View and moderate merchant products</CardDescription>
-                    </div>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search products..."
-                        className="pl-9 w-64"
-                      />
-                    </div>
+              {/* Error Banner */}
+              {!isLoadingProducts && databaseProducts.length === 0 && productsSearchQuery && (
+                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800">
+                    Could not load base products. Please try again.
+                  </p>
+                </div>
+              )}
+
+              {/* Toolbar */}
+              <CatalogToolbar
+                searchQuery={productsSearchQuery}
+                onSearchChange={(value) => {
+                  setProductsSearchQuery(value);
+                  setProductsPage(1);
+                }}
+                statusFilter={statusFilter}
+                onStatusFilterChange={setStatusFilter}
+                categoryFilter={categoryFilter}
+                onCategoryFilterChange={setCategoryFilter}
+                sortBy={sortBy}
+                onSortChange={setSortBy}
+                totalCount={productsTotal}
+                activeCount={databaseProducts.filter(p => p.isActive).length}
+                draftCount={0} // TODO: Add draft status to products
+                archivedCount={databaseProducts.filter(p => !p.isActive).length}
+              />
+
+              {/* Products Table */}
+              <div className="mt-4">
+                <BaseProductsTable
+                  products={filteredAndSortedProducts}
+                  isLoading={isLoadingProducts}
+                  onEdit={(id) => {
+                    window.location.href = `/admin/products/${id}/edit`;
+                  }}
+                  onDuplicate={(id) => {
+                    toast.info('Duplicate functionality coming soon');
+                  }}
+                  onArchive={async (id) => {
+                    try {
+                      const response = await productApi.delete(id);
+                      if (response && response.success) {
+                        toast.success('Product archived successfully');
+                      } else {
+                        toast.error('Failed to archive product');
+                      }
+                      // Refresh products list
+                      await fetchProducts();
+                    } catch (error: any) {
+                      toast.error(error.message || 'Failed to archive product');
+                    }
+                  }}
+                  onDelete={async (id) => {
+                    try {
+                      const response = await productApi.delete(id);
+                      if (response && response.success) {
+                        toast.success('Product deleted successfully');
+                      } else {
+                        toast.error('Failed to delete product');
+                      }
+                      // Refresh products list
+                      await fetchProducts();
+                    } catch (error: any) {
+                      toast.error(error.message || 'Failed to delete product');
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Pagination */}
+              {productsTotal > 20 && !isLoadingProducts && databaseProducts.length > 0 && (
+                <div className="flex items-center justify-between mt-6 pt-4 border-t">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {((productsPage - 1) * 20) + 1} to {Math.min(productsPage * 20, productsTotal)} of {productsTotal} products
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setProductsPage(p => Math.max(1, p - 1))}
+                      disabled={productsPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setProductsPage(p => p + 1)}
+                      disabled={productsPage * 20 >= productsTotal}
+                    >
+                      Next
+                    </Button>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead>Base Product</TableHead>
-                        <TableHead>Price</TableHead>
-                        <TableHead>Store</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {allProducts.slice(0, 10).map((product) => (
-                        <TableRow key={product.id}>
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              {product.mockupUrl && (
-                                <img src={product.mockupUrl} alt={product.name} className="h-10 w-10 rounded object-cover" />
-                              )}
-                              <span className="font-medium">{product.name}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>{product.baseProduct}</TableCell>
-                          <TableCell>${product.price}</TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">
-                              {allStores.find(s => s.userId === product.userId)?.storeName || 'Unknown'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary" className="bg-green-500/10 text-green-500">
-                              Published
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex gap-2 justify-end">
-                              <Button variant="ghost" size="sm">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="sm" className="text-destructive">
-                                <XCircle className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
+                </div>
+              )}
             </>
           )}
 

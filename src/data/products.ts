@@ -105,10 +105,41 @@ export const mockProducts: Product[] = [
 ];
 
 export const categories = [
+  // Apparel
   { name: 'T-Shirts', slug: 't-shirts', image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400' },
+  { name: 'Tank Tops', slug: 'tank-tops', image: 'https://images.unsplash.com/photo-1622445275463-afa2ab738c34?w=400' },
   { name: 'Hoodies', slug: 'hoodies', image: 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?w=400' },
+  { name: 'Sweatshirts', slug: 'sweatshirts', image: 'https://images.unsplash.com/photo-1578587018452-892bacefd3f2?w=400' },
+  { name: 'Jackets', slug: 'jackets', image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=400' },
+  { name: 'Crop Tops', slug: 'crop-tops', image: 'https://images.unsplash.com/photo-1594633313593-bab3825d0caf?w=400' },
+  
+  // Accessories
   { name: 'Tote Bags', slug: 'bags', image: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?w=400' },
-  { name: 'Drinkware', slug: 'drinkware', image: 'https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=400' },
   { name: 'Caps', slug: 'caps', image: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=400' },
-  { name: 'Stationery', slug: 'stationery', image: 'https://images.unsplash.com/photo-1531346878377-a5be20888e57?w=400' }
+  { name: 'Phone Covers', slug: 'phone-covers', image: 'https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=400' },
+  { name: 'Beanies', slug: 'beanies', image: 'https://images.unsplash.com/photo-1576871337632-b9aef4c17ab9?w=400' },
+  
+  // Home & Living
+  { name: 'Mugs', slug: 'mugs', image: 'https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=400' },
+  { name: 'Cushions', slug: 'cushions', image: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=400' },
+  { name: 'Frames', slug: 'frames', image: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?w=400' },
+  { name: 'Coasters', slug: 'coasters', image: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400' },
+  
+  // Print Products
+  { name: 'Notebooks', slug: 'notebooks', image: 'https://images.unsplash.com/photo-1531346878377-a5be20888e57?w=400' },
+  { name: 'Posters', slug: 'posters', image: 'https://images.unsplash.com/photo-1499892477393-f675706cbe6e?w=400' },
+  { name: 'Stickers', slug: 'stickers', image: 'https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=400' },
+  { name: 'Business Cards', slug: 'business-cards', image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?w=400' },
+  
+  // Tech
+  { name: 'iPhone Cases', slug: 'iphone-cases', image: 'https://images.unsplash.com/photo-1591337676887-a217a6970a8a?w=400' },
+  { name: 'Laptop Skins', slug: 'laptop-skins', image: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=400' },
+  
+  // Packaging
+  { name: 'Boxes', slug: 'boxes', image: 'https://images.unsplash.com/photo-1607166452427-7e4477079cb9?w=400' },
+  { name: 'Bottles', slug: 'bottles', image: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=400' },
+  
+  // Jewelry
+  { name: 'Rings', slug: 'rings', image: 'https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=400' },
+  { name: 'Necklaces', slug: 'necklaces', image: 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=400' },
 ];

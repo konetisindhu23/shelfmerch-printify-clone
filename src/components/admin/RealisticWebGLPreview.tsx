@@ -104,6 +104,37 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
     return Number.isNaN(n) ? null : n;
   };
 
+  // Helper function to convert hex color to RGB
+  const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
+    const normalized = hex.trim().replace('#', '');
+    const match = /^([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(normalized);
+    return match
+      ? {
+          r: Number.parseInt(match[1], 16),
+          g: Number.parseInt(match[2], 16),
+          b: Number.parseInt(match[3], 16),
+        }
+      : { r: 0, g: 0, b: 0 }; // Default to black if invalid hex
+  };
+
+  // Calculate luminance and determine if the color is dark
+  // Uses standard luminance formula: luminance = 0.2126 * R + 0.7152 * G + 0.0722 * B
+  const isDarkHex = (hex?: string | null): boolean => {
+    if (!hex || typeof hex !== 'string') return false;
+    
+    try {
+      const rgb = hexToRgb(hex);
+      // Calculate luminance using the standard formula (normalized to 0-1 range)
+      const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+      
+      // Return true if luminance is below threshold (0.5 = medium gray)
+      // Dark colors have a lower luminance value
+      return luminance < 0.5;
+    } catch {
+      return false; // Default to light color if calculation fails
+    }
+  };
+
   // Initialize Pixi Application (v8 async init)
   // We initialize once on mount to ensure the canvas is always present,
   // regardless of when a mockup image or placeholder becomes available.
@@ -617,12 +648,18 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
         designSprite.x = phScreenX + phScreenW / 2;
         designSprite.y = phScreenY + phScreenH / 2;
 
-        // Multiply blend to make design integrate with garment colors.
-        // This ensures the design's colors blend realistically with the T-shirt's fabric color.
-        // MULTIPLY blend mode multiplies the design's color with the T-shirt color,
-        // ensuring the design takes on the color properties of the fabric (shading, tint, etc.)
-        designSprite.blendMode = 'multiply';
-        designSprite.alpha = 0.9;
+        // Dynamic blend mode based on garment color luminance
+        // For dark garments: use 'screen' blend mode with full opacity to brighten the design
+        // For light garments: use 'multiply' blend mode to integrate naturally with garment color
+        if (garmentTintHex) {
+          const isDark = isDarkHex(garmentTintHex);
+          designSprite.blendMode = isDark ? 'screen' : 'multiply';
+          designSprite.alpha = isDark ? 1.0 : 0.9; // Full opacity for dark garments, slightly reduced for light
+        } else {
+          // Default: use multiply for untinted garments (assumed light/white)
+          designSprite.blendMode = 'multiply';
+          designSprite.alpha = 0.9;
+        }
 
         // Build mask matching placeholder shape.
         const mask = new Graphics();
@@ -759,7 +796,32 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
     };
 
     loadDesigns();
-  }, [appReady, designUrlsByPlaceholder, placeholders, mockupImageUrl, activePlaceholder, filterToken, onSelectPlaceholder, previewMode]);
+  }, [appReady, designUrlsByPlaceholder, placeholders, mockupImageUrl, activePlaceholder, filterToken, onSelectPlaceholder, previewMode, garmentTintHex]);
+
+  // Update blend mode and opacity of existing design sprites when garment color changes
+  useEffect(() => {
+    const container = sceneRef.current.designContainer;
+    if (!appReady || !container) return;
+
+    // Update blend mode and opacity for all design sprites based on garment color
+    container.children.forEach((child: any) => {
+      // Skip non-sprite children (like masks)
+      if (!(child instanceof Sprite)) return;
+      // Skip the displacement sprite if it exists
+      if (child === sceneRef.current.displacementSprite) return;
+
+      // Apply dynamic blend mode based on garment color luminance
+      if (garmentTintHex) {
+        const isDark = isDarkHex(garmentTintHex);
+        child.blendMode = isDark ? 'screen' : 'multiply';
+        child.alpha = isDark ? 1.0 : 0.9;
+      } else {
+        // Default: use multiply for untinted garments
+        child.blendMode = 'multiply';
+        child.alpha = 0.9;
+      }
+    });
+  }, [appReady, garmentTintHex]);
 
   // Toggle interaction mode on existing design sprites when previewMode changes
   useEffect(() => {

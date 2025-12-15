@@ -10,7 +10,9 @@ import { storeApi, storeProductsApi } from '@/lib/api';
 import { getTheme } from '@/lib/themes';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStoreAuth } from '@/contexts/StoreAuthContext';
 import CartDrawer from '@/components/storefront/CartDrawer';
+import StoreAuthModal from '@/components/storefront/StoreAuthModal';
 import SectionRenderer from '@/components/builder/SectionRenderer';
 
 const StoreFrontendNew = () => {
@@ -57,8 +59,8 @@ const StoreFrontendNew = () => {
               typeof sp.sellingPrice === 'number'
                 ? sp.sellingPrice
                 : typeof sp.price === 'number'
-                ? sp.price
-                : 0;
+                  ? sp.price
+                  : 0;
 
             const primaryImage =
               sp.galleryImages?.find((img: any) => img.isPrimary)?.url ||
@@ -102,7 +104,7 @@ const StoreFrontendNew = () => {
 
     loadSP();
   }, [store, spFilter]);
-  
+
   // Function to load store data
   const loadStoreData = useCallback(async () => {
     if (!subdomain) return;
@@ -131,7 +133,7 @@ const StoreFrontendNew = () => {
       const customDomain = `${subdomain}.shelfmerch.com`;
       // Update document title and meta tags
       document.title = `${subdomain.charAt(0).toUpperCase() + subdomain.slice(1)} - ShelfMerch Store`;
-      
+
       // You can also update the displayed URL using history API (cosmetic only)
       // Note: This won't actually change the domain, but shows the concept
       window.history.replaceState(null, '', `/store/${subdomain}`);
@@ -159,22 +161,7 @@ const StoreFrontendNew = () => {
     };
   }, [subdomain]);
 
-  // Load cart from session storage for this store
-  useEffect(() => {
-    if (store) {
-      const savedCart = sessionStorage.getItem(`cart_${store.id}`);
-      if (savedCart) {
-        setCart(JSON.parse(savedCart));
-      }
-    }
-  }, [store]);
-
-  // Save cart to session storage whenever it changes
-  useEffect(() => {
-    if (store) {
-      sessionStorage.setItem(`cart_${store.id}`, JSON.stringify(cart));
-    }
-  }, [cart, store]);
+  // Cart is kept only in memory for this session; no local/session storage
 
   const handleAddToCart = (product: Product, variant: { color: string; size: string }, quantity: number) => {
     const existingIndex = cart.findIndex(
@@ -212,8 +199,8 @@ const StoreFrontendNew = () => {
     setCart(
       cart.map((item) =>
         item.productId === productId &&
-        item.variant.color === variant.color &&
-        item.variant.size === variant.size
+          item.variant.color === variant.color &&
+          item.variant.size === variant.size
           ? { ...item, quantity }
           : item
       )
@@ -238,10 +225,28 @@ const StoreFrontendNew = () => {
     navigate(`/store/${store.subdomain}/product/${product.id}`);
   };
 
+  const { isAuthenticated, checkAuth } = useStoreAuth();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  // Check auth on mount
+  useEffect(() => {
+    if (subdomain) {
+      checkAuth(subdomain);
+    }
+  }, [subdomain]);
+
   const handleCheckout = () => {
     if (!store) return;
+
+    if (!isAuthenticated) {
+      setAuthModalOpen(true);
+      return;
+    }
+
     setCartOpen(false);
-    navigate(`/store/${store.subdomain}/checkout`);
+    navigate(`/store/${store.subdomain}/checkout`, {
+      state: { cart, storeId: store.id, subdomain: store.subdomain },
+    });
   };
 
   if (!store) {
@@ -349,131 +354,131 @@ const StoreFrontendNew = () => {
         <>
           {/* Hero Section */}
           <section
-        className="py-20"
-        style={{
-          background: `linear-gradient(to bottom right, ${theme.colors.primary}15, ${theme.colors.background})`,
-        }}
-      >
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="text-5xl font-bold mb-4" style={{ fontFamily: theme.fonts.heading }}>
-            Welcome to {store.storeName}
-          </h2>
-          <p
-            className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto"
-            style={{ fontFamily: theme.fonts.body }}
+            className="py-20"
+            style={{
+              background: `linear-gradient(to bottom right, ${theme.colors.primary}15, ${theme.colors.background})`,
+            }}
           >
-            {store.description || 'Discover our collection of custom designed merchandise'}
-          </p>
-          <Button
-            size="lg"
-            style={{ backgroundColor: theme.colors.primary }}
-            asChild
-          >
-            <a href="#products">Shop Now</a>
-          </Button>
-        </div>
-      </section>
-
-      {/* Products Section */}
-      <section id="products" className="py-16">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h2 className="text-3xl font-bold mb-2">Our Products</h2>
-              <p className="text-muted-foreground">
-                {products.length} {products.length === 1 ? 'product' : 'products'} available
+            <div className="container mx-auto px-4 text-center">
+              <h2 className="text-5xl font-bold mb-4" style={{ fontFamily: theme.fonts.heading }}>
+                Welcome to {store.storeName}
+              </h2>
+              <p
+                className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto"
+                style={{ fontFamily: theme.fonts.body }}
+              >
+                {store.description || 'Discover our collection of custom designed merchandise'}
               </p>
+              <Button
+                size="lg"
+                style={{ backgroundColor: theme.colors.primary }}
+                asChild
+              >
+                <a href="#products">Shop Now</a>
+              </Button>
             </div>
-          </div>
+          </section>
 
-          {products.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {products.map((product) => {
-                const mockup = product.mockupUrls?.[0] || product.mockupUrl;
-                const sellingPrice = product.price;
-                const compareAtPrice = product.compareAtPrice;
+          {/* Products Section */}
+          <section id="products" className="py-16">
+            <div className="container mx-auto px-4">
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h2 className="text-3xl font-bold mb-2">Our Products</h2>
+                  <p className="text-muted-foreground">
+                    {products.length} {products.length === 1 ? 'product' : 'products'} available
+                  </p>
+                </div>
+              </div>
 
-                return (
-                <Card
-                  key={product.id}
-                  className="overflow-hidden group cursor-pointer hover:shadow-lg transition-all"
-                  onClick={() => handleProductClick(product)}
-                >
-                  <div className="aspect-square bg-muted relative overflow-hidden">
-                    {mockup ? (
-                      <img
-                        src={mockup}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                        <Package className="h-16 w-16" />
-                      </div>
-                    )}
-                    {typeof compareAtPrice === 'number' && compareAtPrice > sellingPrice && (
-                      <Badge className="absolute top-2 right-2 bg-red-500">
-                        Save ${(compareAtPrice - sellingPrice).toFixed(2)}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="p-4">
-                    <h3 className="font-semibold mb-2 group-hover:text-primary transition-colors line-clamp-2">
-                      {product.name}
-                    </h3>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-baseline gap-2">
-                        <p
-                          className="text-lg font-bold"
-                          style={{ color: theme.colors.primary }}
-                        >
-                          ${sellingPrice.toFixed(2)}
-                        </p>
-                        {typeof compareAtPrice === 'number' && compareAtPrice > sellingPrice && (
-                          <p className="text-sm text-muted-foreground line-through">
-                            ${compareAtPrice.toFixed(2)}
-                          </p>
-                        )}
-                      </div>
-                      <Button
-                        size="sm"
-                        style={{ backgroundColor: theme.colors.primary }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleProductClick(product);
-                        }}
+              {products.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {products.map((product) => {
+                    const mockup = product.mockupUrls?.[0] || product.mockupUrl;
+                    const sellingPrice = product.price;
+                    const compareAtPrice = product.compareAtPrice;
+
+                    return (
+                      <Card
+                        key={product.id}
+                        className="overflow-hidden group cursor-pointer hover:shadow-lg transition-all"
+                        onClick={() => handleProductClick(product)}
                       >
-                        View
-                      </Button>
-                    </div>
-                  </div>
+                        <div className="aspect-square bg-muted relative overflow-hidden">
+                          {mockup ? (
+                            <img
+                              src={mockup}
+                              alt={product.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                              <Package className="h-16 w-16" />
+                            </div>
+                          )}
+                          {typeof compareAtPrice === 'number' && compareAtPrice > sellingPrice && (
+                            <Badge className="absolute top-2 right-2 bg-red-500">
+                              Save ${(compareAtPrice - sellingPrice).toFixed(2)}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="p-4">
+                          <h3 className="font-semibold mb-2 group-hover:text-primary transition-colors line-clamp-2">
+                            {product.name}
+                          </h3>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-baseline gap-2">
+                              <p
+                                className="text-lg font-bold"
+                                style={{ color: theme.colors.primary }}
+                              >
+                                ${sellingPrice.toFixed(2)}
+                              </p>
+                              {typeof compareAtPrice === 'number' && compareAtPrice > sellingPrice && (
+                                <p className="text-sm text-muted-foreground line-through">
+                                  ${compareAtPrice.toFixed(2)}
+                                </p>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              style={{ backgroundColor: theme.colors.primary }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleProductClick(product);
+                              }}
+                            >
+                              View
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Card className="p-12 text-center">
+                  <Package className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-xl font-bold mb-2">No Products Yet</h3>
+                  <p className="text-muted-foreground">
+                    The store owner is currently adding products. Check back soon!
+                  </p>
                 </Card>
-              );
-              })}
+              )}
             </div>
-          ) : (
-            <Card className="p-12 text-center">
-              <Package className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-xl font-bold mb-2">No Products Yet</h3>
-              <p className="text-muted-foreground">
-                The store owner is currently adding products. Check back soon!
-              </p>
-            </Card>
-          )}
-        </div>
-      </section>
+          </section>
 
-      {/* About Section */}
-      <section id="about" className="py-16 bg-muted/30">
-        <div className="container mx-auto px-4 max-w-3xl text-center">
-          <h2 className="text-3xl font-bold mb-4">About Us</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            {store.storeName} brings you high-quality custom merchandise designed with passion.
-            Every product is printed on demand, ensuring freshness and reducing waste. We're
-            committed to delivering exceptional quality and customer satisfaction.
-          </p>
-        </div>
-      </section>
+          {/* About Section */}
+          <section id="about" className="py-16 bg-muted/30">
+            <div className="container mx-auto px-4 max-w-3xl text-center">
+              <h2 className="text-3xl font-bold mb-4">About Us</h2>
+              <p className="text-muted-foreground leading-relaxed">
+                {store.storeName} brings you high-quality custom merchandise designed with passion.
+                Every product is printed on demand, ensuring freshness and reducing waste. We're
+                committed to delivering exceptional quality and customer satisfaction.
+              </p>
+            </div>
+          </section>
         </>
       )}
 
@@ -497,6 +502,19 @@ const StoreFrontendNew = () => {
         onUpdateQuantity={handleUpdateQuantity}
         onRemove={handleRemoveFromCart}
         onCheckout={handleCheckout}
+      />
+
+      <StoreAuthModal
+        open={authModalOpen}
+        onOpenChange={setAuthModalOpen}
+        subdomain={subdomain || ''}
+        onSuccess={() => {
+          setAuthModalOpen(false);
+          // Proceed to checkout if cart is open
+          if (cartOpen) {
+            handleCheckout();
+          }
+        }}
       />
 
     </div>

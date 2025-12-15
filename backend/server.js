@@ -30,6 +30,7 @@ const uploadRoutes = require('./routes/upload');
 const assetsRoutes = require('./routes/assets');
 const storeRoutes = require('./routes/stores');
 const storeProductsRoutes = require('./routes/storeProducts');
+const storeCheckoutRoutes = require('./routes/storeCheckout');
 
 // Initialize Express app
 const app = express();
@@ -37,20 +38,20 @@ const app = express();
 // CORS configuration - MUST BE FIRST
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = process.env.CORS_ORIGINS 
+    const allowedOrigins = process.env.CORS_ORIGINS
       ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
       : [
-          'http://localhost:5173', 
-          'http://localhost:3000', 
-          'http://localhost:8080', 
-          'http://localhost:5174',
-          'http://localhost:5175',
-          'http://localhost:4173'
-        ];
-    
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'http://localhost:8080',
+        'http://localhost:5174',
+        'http://localhost:5175',
+        'http://localhost:4173'
+      ];
+
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
+
     // In development, allow all localhost origins
     if (process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
       if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
@@ -58,7 +59,7 @@ const corsOptions = {
         return callback(null, true);
       }
     }
-    
+
     if (allowedOrigins.indexOf(origin) !== -1) {
       console.log(`✓ CORS allowed for origin: ${origin}`);
       callback(null, true);
@@ -152,6 +153,9 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/assets', assetsRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/store-products', storeProductsRoutes);
+app.use('/api/store-checkout', storeCheckoutRoutes);
+app.use('/api/store-auth', require('./routes/storeAuth'));
+app.use('/api', storeCheckoutRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -227,7 +231,7 @@ const connectDB = async () => {
       throw new Error('MONGO_URL environment variable is not set');
     }
 
-    const connectionString = dbName 
+    const connectionString = dbName
       ? `${mongoUrl}/${dbName}?retryWrites=true&w=majority`
       : `${mongoUrl}?retryWrites=true&w=majority`;
 
@@ -262,7 +266,7 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   try {
     await connectDB();
-    
+
     const server = app.listen(PORT, 'localhost', () => {
       const address = server.address();
       console.log(`✅ Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);

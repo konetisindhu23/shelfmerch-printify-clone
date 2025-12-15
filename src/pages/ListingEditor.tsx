@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -17,86 +17,60 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { storeApi, storeProductsApi } from '@/lib/api';
+
+interface IncomingVariant {
+  id?: string;
+  size: string;
+  color: string;
+  sku?: string;
+  productionCost: number;
+}
+
+interface LocationState {
+  productId?: string;
+  baseSellingPrice?: number;
+  title?: string;
+  description?: string;
+  galleryImages?: Array<{ id: string; url: string; position: number; isPrimary?: boolean; imageType?: string; altText?: string }>;
+  designData?: any;
+  variants?: IncomingVariant[];
+}
 
 interface VariantRow {
+  id?: string;
   size: string;
   color: string;
   sku: string;
-  retailPrice: string;
-  profit: string;
-  profitMargin: string;
-  cost: string;
+  retailPrice: number;
+  productionCost: number;
 }
-
-const sampleVariants: VariantRow[] = [
-  {
-    size: 'S',
-    color: '1 color',
-    sku: '70095709892970033704',
-    retailPrice: '20.68',
-    profit: '8.27',
-    profitMargin: '40%',
-    cost: '12.41',
-  },
-  {
-    size: 'M',
-    color: '1 color',
-    sku: '28884413898365779599',
-    retailPrice: '20.68',
-    profit: '8.27',
-    profitMargin: '40%',
-    cost: '12.41',
-  },
-  {
-    size: 'L',
-    color: '1 color',
-    sku: '33210482601132596809',
-    retailPrice: '20.68',
-    profit: '8.27',
-    profitMargin: '40%',
-    cost: '12.41',
-  },
-  {
-    size: 'XL',
-    color: '1 color',
-    sku: '24231972701808289371',
-    retailPrice: '20.68',
-    profit: '8.27',
-    profitMargin: '40%',
-    cost: '12.41',
-  },
-  {
-    size: '2XL',
-    color: '1 color',
-    sku: '33679103195382017056',
-    retailPrice: '22.78',
-    profit: '9.11',
-    profitMargin: '40%',
-    cost: '13.67',
-  },
-  {
-    size: '3XL',
-    color: '1 color',
-    sku: '28193768428113689123',
-    retailPrice: '26.18',
-    profit: '10.47',
-    profitMargin: '40%',
-    cost: '15.71',
-  },
-  {
-    size: '4XL',
-    color: '1 color',
-    sku: '24196879499804553430',
-    retailPrice: '29.43',
-    profit: '11.77',
-    profitMargin: '40%',
-    cost: '17.66',
-  },
-];
 
 const ListingEditor = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { state } = location as { state: LocationState | null };
+
+  const initialVariantRows: VariantRow[] = useMemo(() => {
+    const incoming = state?.variants || [];
+    if (!incoming.length) return [];
+
+    return incoming.map((v) => {
+      const cost = Number.isFinite(v.productionCost) ? v.productionCost : 0;
+      // Default retail price to a 40% margin over cost if possible
+      const defaultRetail = cost > 0 ? parseFloat((cost / 0.6).toFixed(2)) : cost;
+      return {
+        id: v.id,
+        size: v.size,
+        color: v.color,
+        sku: v.sku || '',
+        productionCost: parseFloat(cost.toFixed(2)),
+        retailPrice: defaultRetail,
+      };
+    });
+  }, [state]);
   const [title, setTitle] = useState('wyz Logo Circle Graphic T-Shirt | Minimal Branding Tee');
   const [description, setDescription] = useState('This relaxed-fit garment-dyed tee wears in like an old favorite...');
   const [addSizeTable, setAddSizeTable] = useState(false);
@@ -106,6 +80,43 @@ const ListingEditor = () => {
   const [syncDescription, setSyncDescription] = useState(true);
   const [syncMockups, setSyncMockups] = useState(true);
   const [syncPricing, setSyncPricing] = useState(false);
+  const [variantRows, setVariantRows] = useState<VariantRow[]>(initialVariantRows);
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  const hasVariantData = variantRows.length > 0;
+
+  const pricingSummary = useMemo(() => {
+    if (!variantRows.length) return null;
+
+    const retailPrices = variantRows.map((v) => v.retailPrice).filter((v) => Number.isFinite(v));
+    const costs = variantRows.map((v) => v.productionCost).filter((v) => Number.isFinite(v));
+
+    if (!retailPrices.length || !costs.length) return null;
+
+    const profits = variantRows.map((v) => v.retailPrice - v.productionCost);
+    const margins = variantRows.map((v) => {
+      if (!v.retailPrice || v.retailPrice <= 0) return 0;
+      return (v.retailPrice - v.productionCost) / v.retailPrice;
+    });
+
+    const minRetail = Math.min(...retailPrices);
+    const maxRetail = Math.max(...retailPrices);
+    const minCost = Math.min(...costs);
+    const maxCost = Math.max(...costs);
+    const minProfit = Math.min(...profits);
+    const maxProfit = Math.max(...profits);
+    const avgMargin = margins.reduce((sum, m) => sum + m, 0) / margins.length;
+
+    return {
+      minRetail,
+      maxRetail,
+      minCost,
+      maxCost,
+      minProfit,
+      maxProfit,
+      avgMargin,
+    };
+  }, [variantRows]);
 
   const handleBack = () => {
     navigate(-1);
@@ -117,8 +128,71 @@ const ListingEditor = () => {
   };
 
   const handlePublish = () => {
-    // Placeholder – wire into backend later
-    console.log('Publish clicked');
+    // Publish: save StoreProduct and StoreProductVariant entries, then navigate to Stores for channel selection
+    (async () => {
+      if (!state?.productId) {
+        toast.error('No product data available to publish');
+        return;
+      }
+
+      setIsPublishing(true);
+
+      try {
+        // Derive selected colors and sizes from variant rows
+        const colors = Array.from(
+          new Set(
+            (variantRows || [])
+              .map((v) => v.color)
+              .filter((c): c is string => !!c && c.trim().length > 0),
+          ),
+        );
+        const sizes = Array.from(
+          new Set(
+            (variantRows || [])
+              .map((v) => v.size)
+              .filter((s): s is string => !!s && s.trim().length > 0),
+          ),
+        );
+
+        const payload: any = {
+          catalogProductId: state.productId,
+          sellingPrice: state.baseSellingPrice ?? variantRows[0]?.retailPrice ?? 0,
+          // Persist designData along with the selected colors & sizes for storefront usage
+          designData: {
+            ...(state.designData || {}),
+            ...(colors.length ? { selectedColors: colors } : {}),
+            ...(sizes.length ? { selectedSizes: sizes } : {}),
+          },
+        };
+
+        if (syncTitle) payload.title = title;
+        if (syncDescription) payload.description = description;
+        if (Array.isArray(state.galleryImages)) payload.galleryImages = state.galleryImages;
+
+        if (variantRows && variantRows.length > 0) {
+          payload.variants = variantRows.map((v) => ({
+            catalogProductVariantId: v.id,
+            sku: v.sku,
+            sellingPrice: v.retailPrice,
+            isActive: true,
+          }));
+        }
+
+        const resp = await storeProductsApi.create(payload);
+        if (resp && resp.success) {
+          toast.success('Product published to your store');
+          // Pass along created store product and navigate to Stores for channel selection
+          navigate('/stores', { state: { ...state, ...{ title, description, variantRows, storeProduct: resp.data.storeProduct } } });
+        } else {
+          toast.error('Failed to publish product: ' + (resp?.message || 'Unknown error'));
+        }
+      } catch (err: any) {
+        console.error('Publish failed', err);
+        toast.error(err?.message || 'Publish failed');
+      } finally {
+        setIsPublishing(false);
+      }
+    })();
   };
 
   return (
@@ -145,7 +219,9 @@ const ListingEditor = () => {
             <Button variant="outline" onClick={handleSaveDraft}>
               Save as draft
             </Button>
-            <Button onClick={handlePublish}>Publish</Button>
+            <Button onClick={handlePublish} disabled={isPublishing}>
+              {isPublishing ? 'Publishing…' : 'Publish'}
+            </Button>
           </div>
         </div>
       </header>
@@ -229,15 +305,36 @@ const ListingEditor = () => {
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Retail price</p>
-              <p className="text-lg font-semibold">$20.68 - $29.43</p>
+              {pricingSummary ? (
+                <p className="text-lg font-semibold">
+                  ${pricingSummary.minRetail.toFixed(2)} - ${pricingSummary.maxRetail.toFixed(2)}
+                </p>
+              ) : (
+                <p className="text-lg font-semibold">—</p>
+              )}
             </div>
             <div className="space-y-1">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Costs</p>
-              <p className="text-lg font-semibold">$12.41 - $17.66</p>
+              {pricingSummary ? (
+                <p className="text-lg font-semibold">
+                  ${pricingSummary.minCost.toFixed(2)} - ${pricingSummary.maxCost.toFixed(2)}
+                </p>
+              ) : (
+                <p className="text-lg font-semibold">—</p>
+              )}
             </div>
             <div className="space-y-1">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Estimated profit</p>
-              <p className="text-lg font-semibold">$8.27 - $11.77 (40%)</p>
+              {pricingSummary ? (
+                <p className="text-lg font-semibold">
+                  ${pricingSummary.minProfit.toFixed(2)} - ${pricingSummary.maxProfit.toFixed(2)} ({
+                    Math.round(pricingSummary.avgMargin * 100)
+                  }
+                  %)
+                </p>
+              ) : (
+                <p className="text-lg font-semibold">—</p>
+              )}
             </div>
           </div>
 
@@ -272,27 +369,57 @@ const ListingEditor = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sampleVariants.map((variant) => (
-                    <TableRow key={variant.sku}>
-                      <TableCell className="font-medium">{variant.size}</TableCell>
-                      <TableCell>{variant.color}</TableCell>
-                      <TableCell>All in stock</TableCell>
-                      <TableCell className="font-mono text-xs">{variant.sku}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">USD</span>
-                          <Input
-                            className="h-8 w-24"
-                            defaultValue={variant.retailPrice}
-                            inputMode="decimal"
-                          />
-                        </div>
+                  {hasVariantData ? (
+                    variantRows.map((variant) => {
+                      const profit = variant.retailPrice - variant.productionCost;
+                      const margin =
+                        variant.retailPrice > 0
+                          ? Math.round((profit / variant.retailPrice) * 100)
+                          : 0;
+
+                      return (
+                        <TableRow key={variant.id || `${variant.size}-${variant.color}-${variant.sku}`}>
+                          <TableCell className="font-medium">{variant.size}</TableCell>
+                          <TableCell>{variant.color}</TableCell>
+                          <TableCell>All in stock</TableCell>
+                          <TableCell className="font-mono text-xs">{variant.sku}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">USD</span>
+                              <Input
+                                className="h-8 w-24"
+                                value={Number.isFinite(variant.retailPrice) ? variant.retailPrice.toFixed(2) : ''}
+                                inputMode="decimal"
+                                onChange={(event) => {
+                                  const value = event.target.value.replace(/[^0-9.]/g, '');
+                                  const parsed = parseFloat(value);
+                                  setVariantRows((rows) =>
+                                    rows.map((row) =>
+                                      row === variant
+                                        ? {
+                                          ...row,
+                                          retailPrice: Number.isNaN(parsed) ? 0 : parseFloat(parsed.toFixed(2)),
+                                        }
+                                        : row,
+                                    ),
+                                  );
+                                }}
+                              />
+                            </div>
+                          </TableCell>
+                          <TableCell>USD {profit.toFixed(2)}</TableCell>
+                          <TableCell>{margin}%</TableCell>
+                          <TableCell>USD {variant.productionCost.toFixed(2)}</TableCell>
+                        </TableRow>
+                      );
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground">
+                        No variants received from Design editor. Publish from a designed product to configure pricing.
                       </TableCell>
-                      <TableCell>USD {variant.profit}</TableCell>
-                      <TableCell>{variant.profitMargin}</TableCell>
-                      <TableCell>USD {variant.cost}</TableCell>
                     </TableRow>
-                  ))}
+                  )}
                 </TableBody>
               </Table>
             </TabsContent>

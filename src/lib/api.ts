@@ -135,6 +135,41 @@ export const storeProductsApi = {
     const json = await response.json();
     return json as { success: boolean; message: string };
   },
+
+  // Get a specific store product for public storefront viewing (with variants)
+  getPublic: async (storeId: string, productId: string) => {
+    const response = await fetch(`${API_BASE_URL}/store-products/public/${storeId}/${productId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new ApiError(errorData.message || 'Failed to fetch store product', response.status, errorData.errors);
+    }
+
+    const json = await response.json();
+    return json as { success: boolean; data: any };
+  },
+};
+
+// Storefront Checkout API
+export const checkoutApi = {
+  // Place an order for a public store by subdomain
+  placeOrder: async (
+    subdomain: string,
+    payload: { cart: any[]; shippingInfo: any }
+  ) => {
+    return apiRequest<{ success: boolean; data: any; message?: string }>(
+      `/store-checkout/${encodeURIComponent(subdomain)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  },
 };
 
 // Get refresh token from localStorage

@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
+import { StoreAuthProvider } from "./contexts/StoreAuthContext";
 import { DataProvider } from "./contexts/DataContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import Index from "./pages/Index";
@@ -145,7 +146,7 @@ const App = () => (
                 path="/admin/products/new"
                 element={
                   // <ProtectedRoute >
-                    <AdminProductCreation />
+                  <AdminProductCreation />
                   // </ProtectedRoute>
                 }
               />
@@ -197,9 +198,9 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
-              <Route path="/store/:subdomain" element={<StoreFrontendNew />} />
-              <Route path="/store/:subdomain/product/:productId" element={<StoreProductPage />} />
-              <Route path="/store/:subdomain/checkout" element={<StoreCheckoutPage />} />
+              <Route path="/store/:subdomain" element={<StoreAuthProvider><StoreFrontendNew /></StoreAuthProvider>} />
+              <Route path="/store/:subdomain/product/:productId" element={<StoreAuthProvider><StoreProductPage /></StoreAuthProvider>} />
+              <Route path="/store/:subdomain/checkout" element={<StoreAuthProvider><StoreCheckoutPage /></StoreAuthProvider>} />
               <Route path="/order-confirmation" element={<OrderConfirmation />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

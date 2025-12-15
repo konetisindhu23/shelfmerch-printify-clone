@@ -109,6 +109,49 @@ router.post('/', protect, authorize('merchant', 'superadmin'), async (req, res) 
   }
 });
 
+// @route   GET /api/store-products/public/:storeId/:productId
+// @desc    Get a specific store product for public storefront viewing
+// @access  Public
+router.get('/public/:storeId/:productId', async (req, res) => {
+  try {
+    const { storeId, productId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(storeId) || !mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ success: false, message: 'Invalid store or product ID' });
+    }
+
+    const storeProduct = await StoreProduct.findOne({
+      _id: productId,
+      storeId: storeId,
+      isActive: true,
+      status: 'published',
+    }).lean();
+
+    if (!storeProduct) {
+      return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+
+    // Fetch variants for this product and populate catalog variant details (size/color)
+    const variants = await StoreProductVariant.find({
+      storeProductId: storeProduct._id,
+      isActive: true,
+    })
+      .populate({ path: 'catalogProductVariantId', select: 'size color colorHex skuTemplate basePrice' })
+      .lean();
+
+    return res.json({
+      success: true,
+      data: {
+        ...storeProduct,
+        variants,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching public store product:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch store product' });
+  }
+});
+
 // @route   GET /api/store-products
 // @desc    List store products for current merchant (all their stores)
 // @access  Private (merchant, superadmin)

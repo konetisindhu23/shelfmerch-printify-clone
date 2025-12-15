@@ -91,6 +91,7 @@ import { StoreBuilder } from '@/types/builder';
 
 export interface Store {
   id: string;
+  _id?: string;
   userId: string;
   storeName: string;
   subdomain: string;

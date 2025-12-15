@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { CartItem, Store, ShippingAddress, Order } from '@/types';
-import { getStoreBySubdomain } from '@/lib/localStorage';
+import { CartItem, Store, ShippingAddress } from '@/types';
 import { getTheme } from '@/lib/themes';
+import { storeApi, checkoutApi } from '@/lib/api';
 import {
   ArrowLeft,
   CreditCard,
@@ -33,6 +33,8 @@ const defaultShipping: ShippingAddress = {
 const StoreCheckoutPage: React.FC = () => {
   const { subdomain } = useParams<{ subdomain: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const locationState = location.state as { cart?: CartItem[]; storeId?: string; subdomain?: string } | null;
   const [store, setStore] = useState<Store | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [shippingInfo, setShippingInfo] = useState<ShippingAddress>(defaultShipping);
@@ -40,23 +42,30 @@ const StoreCheckoutPage: React.FC = () => {
   const [step, setStep] = useState<'shipping' | 'payment'>('shipping');
 
   useEffect(() => {
-    if (!subdomain) return;
-    const foundStore = getStoreBySubdomain(subdomain);
-    if (!foundStore) {
-      setStore(null);
-      return;
-    }
-    setStore(foundStore);
-    const savedCart = sessionStorage.getItem(`cart_${foundStore.id}`);
-    if (savedCart) {
-      setCart(JSON.parse(savedCart));
-    }
+    const load = async () => {
+      if (!subdomain) return;
+      try {
+        const resp = await storeApi.getBySubdomain(subdomain);
+        if (resp.success && resp.data) {
+          setStore(resp.data as Store);
+        } else {
+          setStore(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch store for checkout:', err);
+        setStore(null);
+      }
+    };
+
+    load();
   }, [subdomain]);
 
   useEffect(() => {
-    if (!store) return;
-    sessionStorage.setItem(`cart_${store.id}`, JSON.stringify(cart));
-  }, [cart, store]);
+    // Initialize cart from navigation state; if state is missing, keep empty cart
+    if (locationState?.cart && Array.isArray(locationState.cart)) {
+      setCart(locationState.cart);
+    }
+  }, [locationState]);
 
   const theme = store ? getTheme(store.theme) : getTheme('modern');
 
@@ -89,53 +98,38 @@ const StoreCheckoutPage: React.FC = () => {
 
   const handlePlaceOrder = async () => {
     if (!store) return;
+    if (cart.length === 0) {
+      toast.error('Your cart is empty');
+      return;
+    }
+
+    if (!validateShipping()) {
+      return;
+    }
+
     setProcessing(true);
-    await new Promise((resolve) => setTimeout(resolve, 1800));
+    try {
+      const resp = await checkoutApi.placeOrder(store.subdomain, {
+        cart,
+        shippingInfo,
+      });
 
-    const orderItems: Order['items'] = cart.map((item) => ({
-      productId: item.productId,
-      productName: item.product.name,
-      mockupUrl: item.product.mockupUrls?.[0] || item.product.mockupUrl,
-      mockupUrls: item.product.mockupUrls,
-      quantity: item.quantity,
-      price: item.product.price,
-      variant: item.variant,
-    }));
+      if (!resp.success || !resp.data) {
+        throw new Error(resp.message || 'Failed to place order');
+      }
 
-    const order: Order = {
-      id: Math.random().toString(36).slice(2, 11),
-      userId: store.userId,
-      storeId: store.id,
-      customerEmail: shippingInfo.email,
-      items: orderItems,
-      subtotal,
-      shipping,
-      tax,
-      total,
-      status: 'on-hold',
-      shippingAddress: shippingInfo,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+      const order = resp.data;
 
-    const ordersKey = `orders_${store.userId}`;
-    const existingOrders = localStorage.getItem(ordersKey);
-    const orders = existingOrders ? JSON.parse(existingOrders) : [];
-    orders.push(order);
-    localStorage.setItem(ordersKey, JSON.stringify(orders));
+      setCart([]);
+      toast.success('Order placed successfully!');
 
-    window.dispatchEvent(
-      new CustomEvent('shelfmerch-data-update', {
-        detail: { type: 'order', data: order },
-      })
-    );
-
-    setCart([]);
-    sessionStorage.removeItem(`cart_${store.id}`);
-    setProcessing(false);
-    toast.success('Order placed successfully!');
-
-    navigate('/order-confirmation', { state: { order } });
+      navigate('/order-confirmation', { state: { order } });
+    } catch (error: any) {
+      console.error('Checkout error:', error);
+      toast.error(error?.message || 'Failed to place order');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const handleBackToStore = () => {

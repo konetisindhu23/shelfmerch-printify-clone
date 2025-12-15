@@ -218,19 +218,6 @@ const DesignEditor: React.FC = () => {
     }
   }, [id]);
 
-  // Only fetch saved previews when entering preview mode if there are no unsaved changes
-  useEffect(() => {
-    if (previewMode && !hasUnsavedChanges) {
-      fetchUserPreviews();
-    }
-  }, [previewMode, fetchUserPreviews, hasUnsavedChanges]);
-
-  // Only fetch saved previews when switching views in preview mode if there are no unsaved changes
-  useEffect(() => {
-    if (previewMode && !hasUnsavedChanges) {
-      fetchUserPreviews();
-    }
-  }, [currentView, previewMode, fetchUserPreviews, hasUnsavedChanges]);
   // Design URLs by placeholder ID for WebGL preview - stored per view
   const [designUrlsByPlaceholder, setDesignUrlsByPlaceholder] = useState<Record<string, Record<string, string>>>({});
 
@@ -257,6 +244,9 @@ const DesignEditor: React.FC = () => {
       },
     }));
     setHasUnsavedChanges(true); // Mark as having unsaved changes
+    // Mark this specific view as dirty for design changes
+    setDirtyViewsForDesign(prev => new Set([...prev, view]));
+    console.log('Design changed for view, marking dirty:', view);
   }, []);
 
   const removeDesignUrlForView = useCallback((view: string, placeholderId: string) => {
@@ -292,12 +282,61 @@ const DesignEditor: React.FC = () => {
     contrastBoost: 1.5,
   });
   const [savedPreviewImages, setSavedPreviewImages] = useState<Record<string, string>>({});
+  
+  // Preview cache with proper keying: viewKey|garmentTintHex|designSig|settingsSig
+  const [previewCache, setPreviewCache] = useState<Record<string, string>>({});
+  
+  // Dirty flags: track which views need regeneration
+  const [dirtyViewsForColor, setDirtyViewsForColor] = useState<Set<string>>(new Set());
+  const [dirtyViewsForDesign, setDirtyViewsForDesign] = useState<Set<string>>(new Set());
+
+  // Generate cache key: viewKey|garmentTintHex|designSig|settingsSig
+  const getPreviewCacheKey = useCallback((viewKey: string): string => {
+    const colorKey = primaryColorHex || 'no-color';
+    const designSig = getDesignUrlsHash(viewKey);
+    // Include canvas elements in design signature - match WebGL filtering logic exactly
+    // Elements without view property appear on all views, so include them for all views
+    const viewElements = elements.filter(el => 
+      el.view === viewKey || (!el.view) // Match WebGL: el.view === currentView || !el.view
+    );
+    const elementsSig = viewElements.length > 0 
+      ? viewElements.map(el => `${el.id}-${el.type}-${el.imageUrl?.slice(-10) || ''}`).join('|')
+      : 'no-elements';
+    const combinedDesignSig = `${designSig}|${elementsSig}`;
+    const settingsSig = `${displacementSettings.scaleX}|${displacementSettings.scaleY}|${displacementSettings.contrastBoost}`;
+    return `${viewKey}|${colorKey}|${combinedDesignSig}|${settingsSig}`;
+  }, [primaryColorHex, getDesignUrlsHash, elements, displacementSettings]);
 
   // Wrapper for displacement settings that marks unsaved changes
   const handleDisplacementSettingsChange = useCallback((settings: DisplacementSettings) => {
     setDisplacementSettings(settings);
     setHasUnsavedChanges(true); // Mark as having unsaved changes
-  }, []);
+    // Mark current view as dirty for design changes (settings affect preview)
+    setDirtyViewsForDesign(prev => new Set([...prev, currentView]));
+  }, [currentView]);
+
+  // Handle global color change - mark ALL views dirty
+  useEffect(() => {
+    if (product?.design?.views) {
+      const allViewKeys = product.design.views.map((v: ProductView) => v.key);
+      setDirtyViewsForColor(new Set(allViewKeys));
+      console.log('[DesignEditor] Global color changed:', {
+        primaryColorHex,
+        currentView,
+        allViewKeys,
+        elementsCount: elements.length,
+        elementsByView: {
+          front: elements.filter(e => e.view === 'front' || !e.view).length,
+          back: elements.filter(e => e.view === 'back').length,
+        },
+        designUrlsByPlaceholder: Object.keys(designUrlsByPlaceholder).reduce((acc, view) => {
+          acc[view] = Object.keys(designUrlsByPlaceholder[view] || {}).length;
+          return acc;
+        }, {} as Record<string, number>),
+      });
+    }
+  }, [primaryColorHex, product?.design?.views]);
+
 
   const tools = [
     {
@@ -533,6 +572,39 @@ const DesignEditor: React.FC = () => {
     setSelectedColors([]);
     setSelectedSizes([]);
   }, [product?._id]);
+
+  // Preview mode entry logic: check cache and dirty flags
+  useEffect(() => {
+    if (!previewMode) return;
+    
+    const cacheKey = getPreviewCacheKey(currentView);
+    const isDirtyForColor = dirtyViewsForColor.has(currentView);
+    const isDirtyForDesign = dirtyViewsForDesign.has(currentView);
+    const hasCachedPreview = previewCache[cacheKey] !== undefined;
+    
+    // If view is dirty OR cache miss, we'll show live WebGL (no fetch)
+    // Only fetch if view is clean AND we have a cached preview
+    if (!isDirtyForColor && !isDirtyForDesign && hasCachedPreview) {
+      // Use cached preview - no fetch needed
+      return;
+    }
+    
+    // If dirty or cache miss, clear dirty flags (will regenerate on next save)
+    if (isDirtyForColor) {
+      setDirtyViewsForColor(prev => {
+        const next = new Set(prev);
+        next.delete(currentView);
+        return next;
+      });
+    }
+    if (isDirtyForDesign) {
+      setDirtyViewsForDesign(prev => {
+        const next = new Set(prev);
+        next.delete(currentView);
+        return next;
+      });
+    }
+  }, [previewMode, currentView, getPreviewCacheKey, dirtyViewsForColor, dirtyViewsForDesign, previewCache]);
 
 
   // Get current view data
@@ -827,18 +899,62 @@ const DesignEditor: React.FC = () => {
     setElements(prev => [...prev, newElement]);
     setSelectedIds([newElement.id]);
     setHasUnsavedChanges(true); // Mark as having unsaved changes
+    // Mark views as dirty: if element has no view, it appears on all views
+    if (newElement.view) {
+      setDirtyViewsForDesign(prev => new Set([...prev, newElement.view!]));
+    } else {
+      // Element without view appears on all views - mark all views dirty
+      if (product?.design?.views) {
+        const allViewKeys = product.design.views.map((v: ProductView) => v.key);
+        setDirtyViewsForDesign(prev => new Set([...prev, ...allViewKeys]));
+      }
+    }
     saveToHistory();
     return newElement.id;
   };
 
   const updateElement = (id: string, updates: Partial<CanvasElement>) => {
-    setElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el));
+    setElements(prev => {
+      const updated = prev.map(el => {
+        if (el.id === id) {
+          const updatedEl = { ...el, ...updates };
+          // Mark views as dirty: if element has no view, it appears on all views
+          if (updatedEl.view) {
+            setDirtyViewsForDesign(prevDirty => new Set([...prevDirty, updatedEl.view!]));
+          } else {
+            // Element without view appears on all views - mark all views dirty
+            if (product?.design?.views) {
+              const allViewKeys = product.design.views.map((v: ProductView) => v.key);
+              setDirtyViewsForDesign(prevDirty => new Set([...prevDirty, ...allViewKeys]));
+            }
+          }
+          return updatedEl;
+        }
+        return el;
+      });
+      return updated;
+    });
     setHasUnsavedChanges(true); // Mark as having unsaved changes
   };
 
   const deleteSelected = () => {
     if (selectedIds.length > 0) {
-      setElements(prev => prev.filter(el => !selectedIds.includes(el.id)));
+      setElements(prev => {
+        const toDelete = prev.filter(el => selectedIds.includes(el.id));
+        // Mark views of deleted elements as dirty
+        toDelete.forEach(el => {
+          if (el.view) {
+            setDirtyViewsForDesign(prevDirty => new Set([...prevDirty, el.view!]));
+          } else {
+            // Element without view appears on all views - mark all views dirty
+            if (product?.design?.views) {
+              const allViewKeys = product.design.views.map((v: ProductView) => v.key);
+              setDirtyViewsForDesign(prevDirty => new Set([...prevDirty, ...allViewKeys]));
+            }
+          }
+        });
+        return prev.filter(el => !selectedIds.includes(el.id));
+      });
       setSelectedIds([]);
       setHasUnsavedChanges(true); // Mark as having unsaved changes
       saveToHistory();
@@ -1028,7 +1144,9 @@ const DesignEditor: React.FC = () => {
         });
         return prev.filter(c => c !== color);
       } else {
-        return [...prev, color];
+        // When selecting a color, make it the primary (first) color while preserving others
+        const withoutColor = prev.filter(c => c !== color);
+        return [color, ...withoutColor];
       }
     });
     setHasUnsavedChanges(true); // Mark as having unsaved changes
@@ -1361,16 +1479,6 @@ const DesignEditor: React.FC = () => {
         return;
       }
       setIsPublishing(true);
-
-      // Resolve merchant's primary store
-      const myStoreResp = await storeApi.getMyStore();
-      const myStore = myStoreResp?.data;
-      if (!myStore || !myStore.id) {
-        toast.error('No active store found for your account');
-        setIsPublishing(false);
-        return;
-      }
-
       // Capture preview image
       toast.info('Capturing preview image...');
       const previewImageUrl = await capturePreviewImage();
@@ -1399,68 +1507,70 @@ const DesignEditor: React.FC = () => {
         canvas: { width: stageSize.width, height: stageSize.height, padding: canvasPadding },
       };
 
-      const catalogProductId = (product as any)._id || (product as any).id;
+      const catalogProductId = (product as any)?._id || (product as any)?.id;
       const sellingPrice = product?.catalogue?.basePrice ?? 0;
-      const galleryImages = Array.isArray(product?.galleryImages)
-        ? product.galleryImages.map((img, idx) => ({
-          id: (img as any).id || `img-${idx}`,
-          url: (img as any).url || img,
-          position: (img as any).position ?? idx,
-          isPrimary: (img as any).isPrimary ?? idx === 0,
-          imageType: (img as any).imageType,
-          altText: (img as any).altText,
-        }))
+      const galleryImages = Array.isArray((product as any)?.galleryImages)
+        ? (product as any).galleryImages.map((img: any, idx: number) => ({
+            id: img.id || `img-${idx}`,
+            url: img.url || img,
+            position: img.position ?? idx,
+            isPrimary: img.isPrimary ?? idx === 0,
+            imageType: img.imageType,
+            altText: img.altText,
+          }))
         : [];
 
-      // Map catalog variants to store product variants format
-      // Only include variants that match selected colors/sizes (if any are selected)
-      const catalogVariants = Array.isArray((product as any).variants) ? (product as any).variants : [];
-      const variants = catalogVariants
+      // Build variant rows for ListingEditor based on selected colors/sizes
+      const rawVariants = Array.isArray((product as any)?.variants) ? (product as any).variants : [];
+
+      const listingVariants = rawVariants
         .filter((v: any) => {
-          // If colors/sizes are selected, only include matching variants
+          if (v.isActive === false) return false;
           if (selectedColors.length > 0 && !selectedColors.includes(v.color)) return false;
+
+          // If sizes are selected per color, respect that; otherwise fall back to global sizes selection if any
+          const colorSizes = selectedSizesByColor[v.color] || [];
+          if (colorSizes.length > 0) {
+            return colorSizes.includes(v.size);
+          }
           if (selectedSizes.length > 0 && !selectedSizes.includes(v.size)) return false;
-          return v.isActive !== false; // Only include active variants
+          return true;
         })
         .map((v: any) => {
-          // Generate SKU: use skuTemplate if available, otherwise generate from store/product/variant
-          const variantId = v._id?.toString() || v.id;
-          const sku = v.skuTemplate
-            ? v.skuTemplate.replace(/{SIZE}/g, v.size).replace(/{COLOR}/g, v.color)
-            : `${myStore.id.substring(0, 4).toUpperCase()}-${catalogProductId.toString().substring(0, 6)}-${v.size}-${v.color}`.toUpperCase().replace(/\s+/g, '-');
+          // Production cost: prefer catalog-level cost if available, then variant basePrice, then catalogue.basePrice
+          const catalogCost = (product as any)?.catalogue?.costPriceTaxExcl ?? (product as any)?.catalogue?.basePrice;
+          const variantCost = v.productionCost ?? v.basePrice ?? catalogCost ?? 0;
 
           return {
-            catalogProductVariantId: variantId,
-            sku: sku,
-            sellingPrice: v.basePrice || sellingPrice, // Use variant-specific price if available, otherwise use product price
-            isActive: v.isActive !== false,
+            id: v._id?.toString() || v.id,
+            size: v.size,
+            color: v.color,
+            sku: v.skuTemplate
+              ? v.skuTemplate.replace(/{SIZE}/g, v.size).replace(/{COLOR}/g, v.color)
+              : v.sku || '',
+            productionCost: Number(variantCost) || 0,
           };
         });
 
-      const resp = await storeProductsApi.create({
-        storeId: myStore.id,
-        catalogProductId,
-        sellingPrice,
-        title: product?.catalogue?.name,
-        description: product?.catalogue?.description,
-        galleryImages,
-        designData: designPayload,
-        variants: variants.length > 0 ? variants : undefined, // Only include if we have variants
+      toast.success('Design ready. Continue in Listing editor to finish publishing.');
+      navigate('/listing-editor', {
+        state: {
+          productId: catalogProductId,
+          baseSellingPrice: sellingPrice,
+          title: product?.catalogue?.name,
+          description: product?.catalogue?.description,
+          galleryImages,
+          designData: designPayload,
+          variants: listingVariants,
+        },
       });
-
-      if (resp.success) {
-        toast.success('Product published to your store');
-        navigate('/listing-editor/:id');
-      } else {
-        toast.error(resp.message || 'Failed to publish');
-      }
     } catch (e: any) {
       console.error('Publish error:', e);
       toast.error(e?.message || 'Failed to publish');
     } finally {
       setIsPublishing(false);
     }
-  }, [user, product, elements, currentView, selectedColors, selectedSizes, placeholders, PX_PER_INCH, stageSize, canvasPadding, navigate]);
+  }, [user, product, elements, currentView, selectedColors, selectedSizes, selectedSizesByColor, placeholders, PX_PER_INCH, stageSize, canvasPadding, navigate, capturePreviewImage]);
 
   const handleSave = async () => {
     try {
@@ -1528,6 +1638,18 @@ const DesignEditor: React.FC = () => {
               if (saveResp.ok && saveJson?.success) {
                 toast.success('Preview saved');
                 setHasUnsavedChanges(false); // Reset unsaved changes flag after successful save
+                
+                // Cache the preview with proper key
+                const cacheKey = getPreviewCacheKey(currentView);
+                setPreviewCache(prev => ({
+                  ...prev,
+                  [cacheKey]: uploadedUrl
+                }));
+                
+                // Also update savedPreviewImages for backward compatibility
+                const nextPreviewImages = { ...savedPreviewImages, [currentView]: uploadedUrl } as Record<string, string>;
+                setSavedPreviewImages(nextPreviewImages);
+                
                 resolve();
               } else {
                 toast.error('Uploaded image, but failed to save to user previews');
@@ -1589,10 +1711,7 @@ const DesignEditor: React.FC = () => {
             size="sm"
             onClick={() => {
               setPreviewMode(true);
-              // Only fetch saved previews if there are no unsaved changes
-              if (!hasUnsavedChanges) {
-                fetchUserPreviews();
-              }
+              // Preview entry logic is handled in useEffect above
             }}
           >
             Preview
@@ -1741,19 +1860,33 @@ const DesignEditor: React.FC = () => {
                   transformOrigin: 'center'
                 }}
               >
-                {previewMode && !hasUnsavedChanges && savedPreviewImages[currentView] ? (
-                  <img
-                    src={savedPreviewImages[currentView]}
-                    alt="Saved preview"
-                    className="block max-w-full max-h-full"
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'contain',
-                    }}
-                  />
-                ) : (
+                {previewMode && (() => {
+                  const cacheKey = getPreviewCacheKey(currentView);
+                  const cachedPreview = previewCache[cacheKey];
+                  const isDirtyForColor = dirtyViewsForColor.has(currentView);
+                  const isDirtyForDesign = dirtyViewsForDesign.has(currentView);
+                  
+                  // Show cached preview only if view is clean AND cache exists
+                  if (!isDirtyForColor && !isDirtyForDesign && cachedPreview) {
+                    return (
+                      <img
+                        src={cachedPreview}
+                        alt="Cached preview"
+                        className="block max-w-full max-h-full"
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'contain',
+                        }}
+                      />
+                    );
+                  }
+                  
+                  // Otherwise show live WebGL (rendered below)
+                  return null;
+                })()}
+                {(
                   <RealisticWebGLPreview
                     key={`preview-${currentView}-${currentViewData?.mockupImageUrl ? currentViewData.mockupImageUrl.slice(-20) : 'no-mockup'}-${getDesignUrlsHash(currentView)}`}
                     mockupImageUrl={
@@ -2108,6 +2241,17 @@ const DesignEditor: React.FC = () => {
                       variant={currentView === viewKey ? 'default' : 'ghost'}
                       size="sm"
                       onClick={() => {
+                        // Log view switch for debugging
+                        console.log('[DesignEditor] View switch:', {
+                          from: currentView,
+                          to: viewKey,
+                          previewMode,
+                          primaryColorHex,
+                          elementsCount: elements.length,
+                          elementsForNewView: elements.filter(e => e.view === viewKey || !e.view).length,
+                          designUrlsForNewView: Object.keys(designUrlsByPlaceholder[viewKey] || {}).length,
+                        });
+                        
                         // Explicitly preserve previewMode when switching views
                         const currentPreviewMode = previewModeRef.current;
                         setCurrentView(viewKey as any);
@@ -2150,7 +2294,10 @@ const DesignEditor: React.FC = () => {
                   onColorToggle={handleColorToggle}
                   onSizeToggle={handleSizeToggle}
                   onSizeToggleForColor={handleSizeToggleForColor}
-                  onPrimaryColorHexChange={setPrimaryColorHex}
+                  onPrimaryColorHexChange={(hex) => {
+                    setPrimaryColorHex(hex);
+                    setHasUnsavedChanges(true);
+                  }}
                 />
               </TabsContent>
 

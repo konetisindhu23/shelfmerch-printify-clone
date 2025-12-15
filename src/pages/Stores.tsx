@@ -1,11 +1,14 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { getStoreUrl } from '@/utils/storeUrl';
 import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import ManageStoreDialog from '@/components/ManageStoreDialog';
-import { storeApi } from '@/lib/api';
+import { storeApi, storeProductsApi } from '@/lib/api';
 import type { Store as StoreType } from '@/types';
+import { toast } from 'sonner';
 import {
   Package,
   Store,
@@ -15,30 +18,45 @@ import {
   Settings,
   LogOut,
   Plus,
-  ExternalLink
+  ArrowRight,
+  ExternalLink,
+  Info
 } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+
+const ChannelButton = ({ name, icon, isNew }: { name: string; icon?: React.ReactNode; isNew?: boolean }) => (
+  <Button variant="outline" className="h-14 justify-start px-4 gap-3 relative hover:border-primary/50 hover:bg-muted/50 transition-all group">
+    {icon ? icon : <div className="w-6 h-6 rounded-full bg-muted-foreground/20 flex items-center justify-center text-xs font-bold text-muted-foreground">?</div>}
+    <span className="font-semibold text-lg">{name}</span>
+    {isNew && (
+      <Badge variant="secondary" className="absolute top-2 right-2 text-[10px] h-4 px-1.5 bg-blue-100 text-blue-700 hover:bg-blue-100">
+        New
+      </Badge>
+    )}
+  </Button>
+);
 
 const Stores = () => {
   const { user, logout, isAdmin } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const state = location.state as any; // Product data from listing editor
+
   const [stores, setStores] = useState<StoreType[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [manageDialogOpen, setManageDialogOpen] = useState(false);
-  const [selectedStore, setSelectedStore] = useState<StoreType | null>(null);
+  const [isCreatingInternal, setIsCreatingInternal] = useState(false);
 
   useEffect(() => {
     const fetchStores = async () => {
       try {
         setLoading(true);
-        setError(null);
         const response = await storeApi.listMyStores();
-        if (!response.success) {
-          throw new Error(response.message || 'Failed to fetch stores');
+        if (response.success) {
+          setStores(response.data || []);
         }
-        setStores(response.data || []);
       } catch (err: any) {
         console.error('Error fetching stores:', err);
-        setError(err.message || 'Failed to fetch stores');
       } finally {
         setLoading(false);
       }
@@ -47,11 +65,88 @@ const Stores = () => {
     fetchStores();
   }, []);
 
+  const handleLaunchPopupStore = async () => {
+    // If we have product data, we want to create the store AND publish the product
+    setIsCreatingInternal(true);
+    try {
+      // 1. Create the store
+      const storeName = `Store ${new Date().toLocaleDateString().replace(/\//g, '-')}`;
+      const createResp = await storeApi.create({
+        name: storeName,
+        description: 'My ShelfMerch Pop-Up Store',
+      });
+
+      if (!createResp.success || !createResp.data) {
+        throw new Error(createResp.message || 'Failed to create store');
+      }
+
+      const newStore = createResp.data;
+      toast.success('ShelfMerch Pop-Up store created!');
+
+      // 2. If coming from Listing Editor, publish the product
+      if (state && state.productId && state.variantRows) {
+        const loadingToast = toast.loading('Publishing product to your new store...');
+
+        try {
+          // Prepare variants payload (reused logic from ListingEditor)
+          const variantsPayload = state.variantRows
+            .filter((v: any) => v.id)
+            .map((v: any) => ({
+              catalogProductVariantId: v.id,
+              sku: v.sku,
+              sellingPrice: v.retailPrice,
+              isActive: true,
+            }));
+
+          const baseSellingPrice = state.baseSellingPrice ?? state.variantRows[0]?.retailPrice ?? 0;
+
+          const prodResp = await storeProductsApi.create({
+            storeId: newStore.id,
+            catalogProductId: state.productId,
+            sellingPrice: baseSellingPrice,
+            title: state.title,
+            description: state.description,
+            galleryImages: state.galleryImages,
+            designData: state.designData,
+            variants: variantsPayload.length > 0 ? variantsPayload : undefined,
+          });
+
+          toast.dismiss(loadingToast);
+
+          if (prodResp.success) {
+            toast.success('Product published successfully!');
+            navigate('/dashboard'); // Or to the store view
+          } else {
+            toast.error('Store created, but product publishing failed: ' + prodResp.message);
+          }
+        } catch (pubErr: any) {
+          toast.dismiss(loadingToast);
+          console.error("Publishing error", pubErr);
+          toast.error('Store created, but product publishing failed.');
+        }
+
+      } else {
+        // Just redirect to dashboard if no product data
+        navigate('/dashboard');
+      }
+
+    } catch (error: any) {
+      console.error('Error launching store:', error);
+      toast.error(error.message || 'Failed to launch store');
+    } finally {
+      setIsCreatingInternal(false);
+    }
+  };
+
+  const handleConnectChannel = (channel: string) => {
+    toast.info(`Integration with ${channel} is coming soon!`);
+  };
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex">
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 h-full w-64 border-r bg-card p-6">
-        <Link to="/" className="flex items-center space-x-2 mb-8">
+      <aside className="hidden lg:block w-64 border-r bg-muted/10 p-6 space-y-8 sticky top-0 h-screen overflow-y-auto">
+        <Link to="/" className="flex items-center space-x-2">
           <span className="font-heading text-xl font-bold text-foreground">
             Shelf<span className="text-primary">Merch</span>
           </span>
@@ -101,124 +196,181 @@ const Stores = () => {
           </Button>
         </nav>
 
-        <div className="absolute bottom-6 left-6 right-6">
-          <div className="border-t pt-4 space-y-2">
-            <p className="text-sm text-muted-foreground">Signed in as</p>
-            <p className="text-sm font-medium">{user?.email}</p>
-            <Button
-              variant="ghost"
-              className="w-full justify-start text-destructive hover:text-destructive"
-              onClick={logout}
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              Log out
-            </Button>
-          </div>
+        <div className="pt-4 border-t">
+          <p className="text-sm text-muted-foreground mb-2 px-2">Signed in as</p>
+          <p className="text-sm font-medium px-2 truncate mb-4">{user?.email}</p>
+          <Button variant="ghost" className="w-full justify-start text-destructive" onClick={logout}>
+            <LogOut className="mr-2 h-4 w-4" /> Log out
+          </Button>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="ml-64 p-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-3xl font-bold">My Stores</h1>
-              <p className="text-muted-foreground mt-1">
-                Manage your ShelfMerch storefronts
-              </p>
+      <main className="flex-1 p-8 lg:p-12 max-w-[1600px] mx-auto overflow-y-auto">
+        <div className="max-w-6xl mx-auto space-y-12">
+
+          {/* My Stores List (if any) */}
+          {!loading && stores.length > 0 && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold">My Stores</h2>
+              </div>
+              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                {stores.map((store) => (
+                  <Card key={store.id} className="p-6 flex flex-col justify-between gap-4 border-l-4 border-l-primary">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-bold text-lg">{store.storeName}</h3>
+                        <p className="text-sm text-muted-foreground">{store.subdomain}.shelfmerch.com</p>
+                      </div>
+                      <Badge variant="outline" className="text-xs">Active</Badge>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <Button variant="outline" size="sm" className="flex-1" asChild>
+                        <a href={getStoreUrl(store.subdomain)} target="_blank" rel="noreferrer">
+                          <ExternalLink className="w-4 h-4 mr-2" />
+                          Visit Store
+                        </a>
+                      </Button>
+                      <Button variant="default" size="sm" className="flex-1" onClick={() => toast.info('Dashboard coming soon')}>
+                        Dashboard
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+              <Separator className="my-8" />
             </div>
-            <Link to="/create-store">
-              <Button size="lg" className="gap-2">
-                <Plus className="h-5 w-5" />
-                Create New Store
-              </Button>
-            </Link>
+          )}
+
+          <div className="text-center space-y-4">
+            <h1 className="text-4xl font-bold tracking-tight">Let's connect your store!</h1>
           </div>
 
-          {/* Stores Grid */}
-          {loading ? (
-            <Card className="p-12 text-center">
-              <p className="text-muted-foreground">Loading your stores...</p>
-            </Card>
-          ) : error ? (
-            <Card className="p-12 text-center">
-              <h2 className="text-2xl font-bold mb-2">Unable to load stores</h2>
-              <p className="text-muted-foreground mb-2">{error}</p>
-              <p className="text-xs text-muted-foreground">
-                Please refresh the page or try again later.
-              </p>
-            </Card>
-          ) : stores.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {stores.map((store) => (
-                <Card key={store.id} className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-xl font-bold mb-1">{store.storeName}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {store.subdomain}.shelfmerch.com
-                      </p>
+          {/* Channels Section */}
+          <div className="space-y-6">
+            <h2 className="text-2xl font-semibold">Already have a sales channel? Connect your store now.</h2>
+            <p className="text-muted-foreground">Choose a sales channel below to connect your store.</p>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              <div onClick={() => handleConnectChannel('Etsy')}>
+                <ChannelButton name="Etsy" icon={<span className="text-[#F1641E] font-serif font-bold text-xl">Etsy</span>} />
+              </div>
+              <div onClick={() => handleConnectChannel('Shopify')}>
+                <ChannelButton name="Shopify" icon={<ShoppingBag className="text-[#95BF47] fill-current" />} />
+              </div>
+              <div onClick={() => handleConnectChannel('TikTok')}>
+                <ChannelButton name="TikTok" icon={<span className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-[#25F4EE] to-[#FE2C55]">TikTok</span>} />
+              </div>
+              <div onClick={() => handleConnectChannel('Amazon')}>
+                <ChannelButton name="Amazon" icon={<span className="font-bold text-lg">amazon</span>} />
+              </div>
+              {/* Placeholder for Printify Pop-Up equivalent */}
+              <div onClick={() => handleLaunchPopupStore()}>
+                <ChannelButton name="ShelfMerch Pop-Up" icon={<Store className="text-primary" />} />
+              </div>
+              <div onClick={() => handleConnectChannel('eBay')}>
+                <ChannelButton name="eBay" icon={<span className="font-bold text-xl"><span className="text-[#E53238]">e</span><span className="text-[#0064D2]">B</span><span className="text-[#F5AF02]">a</span><span className="text-[#86B817]">y</span></span>} />
+              </div>
+              <div onClick={() => handleConnectChannel('Big Cartel')}>
+                <ChannelButton name="Big Cartel" isNew icon={<ShoppingBag />} />
+              </div>
+              <div onClick={() => handleConnectChannel('Squarespace')}>
+                <ChannelButton name="Squarespace" icon={<span className="font-bold text-lg">Squarespace</span>} />
+              </div>
+              <div onClick={() => handleConnectChannel('Wix')}>
+                <ChannelButton name="Wix" icon={<span className="font-bold text-xl">Wix</span>} />
+              </div>
+              <div onClick={() => handleConnectChannel('WooCommerce')}>
+                <ChannelButton name="WooCommerce" icon={<span className="font-bold text-lg text-[#96588A]">Woo</span>} />
+              </div>
+              <div onClick={() => handleConnectChannel('BigCommerce')}>
+                <ChannelButton name="BigCommerce" icon={<span className="font-bold text-lg">B</span>} />
+              </div>
+              <div onClick={() => handleConnectChannel('PrestaShop')}>
+                <ChannelButton name="PrestaShop" icon={<ShoppingBag className="text-[#DD2968]" />} />
+              </div>
+              <div onClick={() => handleConnectChannel('API')}>
+                <ChannelButton name="API" icon={<Settings />} />
+              </div>
+            </div>
+          </div>
+
+          {/* Help Section */}
+          <div className="space-y-6">
+            <h2 className="text-2xl font-semibold">No sales channel yet? We're here to help.</h2>
+            <p className="text-muted-foreground">Choose a sales channel that fits your business and needs.</p>
+
+            <div className="grid gap-6">
+              {/* ShelfMerch Pop-Up Card */}
+              <Card className="p-8 bg-muted/30 border-none shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-2xl font-bold flex items-center gap-2">ShelfMerch <span className="font-normal text-muted-foreground">Pop-Up</span></h3>
+                    <Badge variant="secondary" className="bg-white/50 text-xs font-normal border">Beta version</Badge>
+                  </div>
+                  <p className="text-muted-foreground max-w-2xl">
+                    Start selling right away. No need to create a website, just send out a unique link to your friends, family, or followers.
+                    <a href="#" className="underline ml-1">Learn more</a>
+                  </p>
+                </div>
+                <Button size="lg" className="shrink-0 bg-[#343A40] text-white hover:bg-[#212529]" onClick={handleLaunchPopupStore} disabled={isCreatingInternal}>
+                  {isCreatingInternal ? 'Launching...' : 'Launch Pop-Up store'}
+                </Button>
+              </Card>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Etsy Info Card */}
+                <Card className="p-6 bg-orange-50/50 border-orange-100 flex flex-col justify-between space-y-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xl font-bold text-[#F1641E]">Etsy <span className="text-foreground">Etsy</span></h3>
+                      <Badge className="bg-muted text-muted-foreground hover:bg-muted font-normal">Easy</Badge>
                     </div>
-                    <Store className="h-8 w-8 text-primary" />
-                  </div>
-
-                  <div className="space-y-2 mb-4">
                     <p className="text-sm text-muted-foreground">
-                      Created: {new Date(store.createdAt).toLocaleDateString()}
+                      Etsy provides a fast and easy way to get started selling and reach over 96 million active buyers worldwide.
                     </p>
-                    <p className="text-sm text-muted-foreground capitalize">
-                      Theme: {store.theme}
-                    </p>
+                    <ul className="space-y-2">
+                      <li className="flex items-center gap-2 text-sm"><span className="text-green-600">✔</span> Easy to set up and start selling</li>
+                      <li className="flex items-center gap-2 text-sm"><span className="text-green-600">✔</span> Large audience and traffic</li>
+                      <li className="flex items-center gap-2 text-sm"><span className="text-green-600">✔</span> Low listing fees</li>
+                    </ul>
                   </div>
-
-                  <div className="flex gap-2">
-                    <Button variant="default" size="sm" asChild>
-                      <Link to={`/store/${store.subdomain}`}>
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        Visit
-                      </Link>
-                    </Button>
-
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/stores/${store.id}/builder`}>Builder</Link>
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedStore(store);
-                        setManageDialogOpen(true);
-                      }}
-                    >
-                      <Settings className="h-4 w-4 mr-2" />
-                      Manage
-                    </Button>
+                  <div className="flex gap-3">
+                    <Button className="bg-[#222] text-white hover:bg-black" onClick={() => handleConnectChannel('Etsy')}>Connect to Etsy</Button>
+                    <Button variant="outline" className="border-[#222] text-[#222]">Sign up</Button>
                   </div>
                 </Card>
-              ))}
+
+                {/* Shopify Info Card */}
+                <Card className="p-6 bg-green-50/50 border-green-100 flex flex-col justify-between space-y-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xl font-bold text-[#95BF47]">Shopify</h3>
+                      <Badge className="bg-muted text-muted-foreground hover:bg-muted font-normal">Medium</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Shopify is perfect for established sellers wanting to expand their brand and business with easy setup and store creation tools.
+                    </p>
+                    <ul className="space-y-2">
+                      <li className="flex items-center gap-2 text-sm"><span className="text-green-600">✔</span> 3-day free trial</li>
+                      <li className="flex items-center gap-2 text-sm"><span className="text-green-600">✔</span> SEO & marketing tools</li>
+                      <li className="flex items-center gap-2 text-sm"><span className="text-green-600">✔</span> Customizable storefronts</li>
+                    </ul>
+                  </div>
+                  <div className="flex gap-3">
+                    <Button className="bg-[#008060] text-white hover:bg-[#004C3F]" onClick={() => handleConnectChannel('Shopify')}>Connect to Shopify</Button>
+                    <Button variant="outline" className="border-[#008060] text-[#008060]">Sign up</Button>
+                  </div>
+                </Card>
+              </div>
+
             </div>
-          ) : (
-            <Card className="p-12 text-center">
-              <Store className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h2 className="text-2xl font-bold mb-2">No stores yet</h2>
-              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                Create your first ShelfMerch store to start selling your custom products online.
-              </p>
-              <Link to="/create-store">
-                <Button size="lg">Create Your First Store</Button>
-              </Link>
-            </Card>
-          )}
+          </div>
+
         </div>
       </main>
-
-      {/* Manage Store Dialog */}
-      <ManageStoreDialog
-        open={manageDialogOpen}
-        onClose={() => setManageDialogOpen(false)}
-        store={selectedStore}
-      />
     </div>
   );
 };

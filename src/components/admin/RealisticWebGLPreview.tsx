@@ -110,7 +110,9 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
     displacementSprite: Sprite | null;
     displacementFilter: DisplacementFilter | null;
     mask: Graphics | null;
-    designContainer: Container | null;
+    designContainer: Container | null; // Root container for all design layers
+    placeholderDesignLayer: Container | null; // Only placeholder designs + masks
+    canvasElementsLayer: Container | null; // Only canvas element sprites
     placeholderContainer: Container | null;
     pxPerInch: number;
     canvasElementSprites: Map<string, Sprite>; // Track canvas element sprites by element ID
@@ -121,10 +123,21 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
     displacementFilter: null,
     mask: null,
     designContainer: null,
+    placeholderDesignLayer: null,
+    canvasElementsLayer: null,
     placeholderContainer: null,
     pxPerInch: 1,
     canvasElementSprites: new Map(),
   });
+
+  // Debug logging flag (set to true to enable)
+  const DEBUG_LOGGING = true;
+  
+  // Token to trigger canvas elements reload after garment/containers are ready
+  const [containersReady, setContainersReady] = useState(0);
+
+  // Track previous mockup URL across renders to avoid unnecessary unloads
+  const prevMockupUrlRef = useRef<string | null>(null);
 
   const hexToTint = (hex?: string | null): number | null => {
     if (!hex || typeof hex !== 'string') return null;
@@ -211,11 +224,17 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
 
   // Load garment (mockup) and rebuild base scene
   useEffect(() => {
+    if (!appReady || !appRef.current) return;
+
     // Validate mockupImageUrl before proceeding
-    if (!mockupImageUrl || typeof mockupImageUrl !== 'string' || mockupImageUrl.trim() === '') {
-      console.warn('RealisticWebGLPreview: No valid mockupImageUrl provided:', mockupImageUrl);
-      // Clear scene if no mockup image
-      if (appRef.current) {
+    // Don't clear scene immediately - only clear if URL was previously valid and now invalid
+    const hasValidUrl = mockupImageUrl && typeof mockupImageUrl === 'string' && mockupImageUrl.trim() !== '';
+    const hadValidUrl = prevMockupUrlRef.current !== null;
+
+    if (!hasValidUrl) {
+      // Only clear if we had a valid URL before (not on initial mount or temporary null)
+      if (hadValidUrl && appRef.current) {
+        console.warn('RealisticWebGLPreview: mockupImageUrl became invalid, clearing scene');
         appRef.current.stage.removeChildren();
         sceneRef.current.garmentSprite = null;
         sceneRef.current.designSprite = null;
@@ -224,19 +243,28 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
         sceneRef.current.mask = null;
         sceneRef.current.designContainer = null;
         sceneRef.current.placeholderContainer = null;
+        prevMockupUrlRef.current = null;
+      } else {
+        // Just wait - don't clear anything if URL was never valid or is temporarily null
+        console.warn('RealisticWebGLPreview: No valid mockupImageUrl provided (waiting):', mockupImageUrl);
       }
       return;
     }
 
-    if (!appReady || !appRef.current) return;
+    // Check if URL actually changed - if not, skip reloading
+    if (prevMockupUrlRef.current === mockupImageUrl && sceneRef.current.garmentSprite) {
+      // URL hasn't changed and we already have a garment sprite - just update physical dimensions if needed
+      // This prevents unnecessary reloads when only physicalWidth/physicalHeight change
+      return;
+    }
 
     let cancelled = false;
     const currentApp = appRef.current;
-    const prevUrlRef: { current?: string } = { current: undefined };
+    const currentUrl = mockupImageUrl;
 
     const run = async () => {
       try {
-        console.log('RealisticWebGLPreview: Loading mockup image:', mockupImageUrl);
+        console.log('RealisticWebGLPreview: Loading mockup image:', currentUrl);
 
         // Pre-validate image by loading it first
         const img = new Image();
@@ -244,27 +272,33 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
 
         await new Promise<void>((resolve, reject) => {
           const timeout = setTimeout(() => {
-            reject(new Error(`Image load timeout: ${mockupImageUrl}`));
+            reject(new Error(`Image load timeout: ${currentUrl}`));
           }, 10000); // 10 second timeout
 
           img.onload = () => {
             clearTimeout(timeout);
-            console.log('RealisticWebGLPreview: Image loaded successfully:', mockupImageUrl, img.width, 'x', img.height);
+            console.log('RealisticWebGLPreview: Image loaded successfully:', currentUrl, img.width, 'x', img.height);
             resolve();
           };
           img.onerror = (err) => {
             clearTimeout(timeout);
-            console.error('RealisticWebGLPreview: Failed to load mockup image:', mockupImageUrl, err);
-            reject(new Error(`Failed to load image: ${mockupImageUrl}`));
+            console.error('RealisticWebGLPreview: Failed to load mockup image:', currentUrl, err);
+            reject(new Error(`Failed to load image: ${currentUrl}`));
           };
-          img.src = mockupImageUrl;
+          img.src = currentUrl;
         });
 
         if (cancelled) return;
 
         // Unload any previous texture for the old URL to avoid stale caches
-        if (prevUrlRef.current && prevUrlRef.current !== mockupImageUrl) {
-          try { await Assets.unload(prevUrlRef.current as string); } catch { }
+        // Only unload if URL actually changed
+        if (prevMockupUrlRef.current && prevMockupUrlRef.current !== currentUrl) {
+          try {
+            await Assets.unload(prevMockupUrlRef.current);
+            console.log('RealisticWebGLPreview: Unloaded previous texture:', prevMockupUrlRef.current);
+          } catch (e) {
+            console.warn('RealisticWebGLPreview: Failed to unload previous texture:', e);
+          }
         }
 
         // Now load as PixiJS texture
@@ -348,7 +382,22 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
         sceneRef.current.displacementFilter = null;
         sceneRef.current.mask = null;
 
+        // Root container for all design layers
         const designContainer = new Container();
+        designContainer.sortableChildren = true;
+        
+        // Separate layers for placeholder designs and canvas elements
+        const placeholderDesignLayer = new Container();
+        placeholderDesignLayer.sortableChildren = true;
+        placeholderDesignLayer.zIndex = 0; // Below canvas elements
+        
+        const canvasElementsLayer = new Container();
+        canvasElementsLayer.sortableChildren = true;
+        canvasElementsLayer.zIndex = 1; // Above placeholder designs
+        
+        designContainer.addChild(placeholderDesignLayer);
+        designContainer.addChild(canvasElementsLayer);
+        
         // Container for placeholders overlays (selection outlines)
         const placeholderContainer = new Container();
 
@@ -356,9 +405,22 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
         app.stage.addChild(placeholderContainer);
 
         sceneRef.current.designContainer = designContainer;
+        sceneRef.current.placeholderDesignLayer = placeholderDesignLayer;
+        sceneRef.current.canvasElementsLayer = canvasElementsLayer;
         sceneRef.current.placeholderContainer = placeholderContainer;
         sceneRef.current.pxPerInch = pxPerInch;
-        prevUrlRef.current = mockupImageUrl;
+        prevMockupUrlRef.current = currentUrl;
+        
+        // Signal that containers are ready so canvas elements effect can load
+        setContainersReady(prev => prev + 1);
+        
+        if (DEBUG_LOGGING) {
+          console.log('[RealisticWebGLPreview] Garment loaded, containers ready:', {
+            currentView,
+            garmentTintHex,
+            mockupUrl: currentUrl?.slice(-20),
+          });
+        }
       } catch (error) {
         console.error('Error loading garment texture:', error);
         // Clear scene on error to prevent black texture
@@ -370,6 +432,8 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
           sceneRef.current.displacementFilter = null;
           sceneRef.current.mask = null;
           sceneRef.current.designContainer = null;
+          sceneRef.current.placeholderDesignLayer = null;
+          sceneRef.current.canvasElementsLayer = null;
           sceneRef.current.placeholderContainer = null;
         }
       }
@@ -379,10 +443,9 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
 
     return () => {
       cancelled = true;
-      // Attempt to unload when effect re-runs for a different URL
-      if (mockupImageUrl) {
-        Assets.unload(mockupImageUrl).catch(() => { });
-      }
+      // Only unload if URL actually changed (not just because physicalWidth/physicalHeight changed)
+      // We track this via prevMockupUrlRef, so we only unload in the async function above
+      // This prevents race conditions where we unload a texture that's still being used
     };
   }, [appReady, mockupImageUrl, physicalWidth, physicalHeight]);
 
@@ -426,11 +489,24 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
 
         // Create/Update Displacement Sprite
         // Clear existing filters so design sprites don't reference a soon-to-be-destroyed filter
-        if (sceneRef.current.designContainer) {
-          sceneRef.current.designContainer.children.forEach((c: any) => {
-            if (c && (c as any).filters) (c as any).filters = null;
-          });
-        }
+        // Helper to clear filters from both layers
+        const clearFiltersFromLayers = () => {
+          if (sceneRef.current.placeholderDesignLayer) {
+            sceneRef.current.placeholderDesignLayer.children.forEach((c: any) => {
+              if (c && c instanceof Sprite && (c as any).filters) {
+                (c as any).filters = null;
+              }
+            });
+          }
+          if (sceneRef.current.canvasElementsLayer) {
+            sceneRef.current.canvasElementsLayer.children.forEach((c: any) => {
+              if (c && c instanceof Sprite && (c as any).filters) {
+                (c as any).filters = null;
+              }
+            });
+          }
+        };
+        clearFiltersFromLayers();
         if (sceneRef.current.displacementSprite) {
           sceneRef.current.displacementSprite.destroy();
         }
@@ -457,12 +533,24 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
         sceneRef.current.displacementSprite = dispSprite;
         sceneRef.current.displacementFilter = filter;
 
-        // Re-attach filter to all design sprites
-        if (sceneRef.current.designContainer) {
-          sceneRef.current.designContainer.children.forEach((c: any) => {
-            if (c && c !== dispSprite) (c as any).filters = [filter];
-          });
-        }
+        // Helper to apply displacement filter to all sprites in both layers
+        const applyFilterToLayers = (filter: DisplacementFilter) => {
+          if (sceneRef.current.placeholderDesignLayer) {
+            sceneRef.current.placeholderDesignLayer.children.forEach((c: any) => {
+              if (c && c instanceof Sprite && c !== dispSprite) {
+                (c as any).filters = [filter];
+              }
+            });
+          }
+          if (sceneRef.current.canvasElementsLayer) {
+            sceneRef.current.canvasElementsLayer.children.forEach((c: any) => {
+              if (c && c instanceof Sprite) {
+                (c as any).filters = [filter];
+              }
+            });
+          }
+        };
+        applyFilterToLayers(filter);
 
         // Bump token to notify other effects to re-bind if needed
         setFilterToken((t) => t + 1);
@@ -481,11 +569,26 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
   // Ensure designs always re-bind to the latest displacement filter
   useEffect(() => {
     const filter = sceneRef.current.displacementFilter;
-    const container = sceneRef.current.designContainer;
-    if (!filter || !container) return;
-    container.children.forEach((c: any) => {
-      if (c && c !== sceneRef.current.displacementSprite) (c as any).filters = [filter];
-    });
+    if (!filter) return;
+    
+    // Helper to apply filter to all sprites in both layers
+    const applyFilterToLayers = () => {
+      if (sceneRef.current.placeholderDesignLayer) {
+        sceneRef.current.placeholderDesignLayer.children.forEach((c: any) => {
+          if (c && c instanceof Sprite && c !== sceneRef.current.displacementSprite) {
+            (c as any).filters = [filter];
+          }
+        });
+      }
+      if (sceneRef.current.canvasElementsLayer) {
+        sceneRef.current.canvasElementsLayer.children.forEach((c: any) => {
+          if (c && c instanceof Sprite) {
+            (c as any).filters = [filter];
+          }
+        });
+      }
+    };
+    applyFilterToLayers();
   }, [filterToken]);
 
   // Update filter scale when sliders move
@@ -618,32 +721,26 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
       !appRef.current ||
       !mockupImageUrl ||
       !sceneRef.current.garmentSprite ||
-      !sceneRef.current.designContainer
+      !sceneRef.current.placeholderDesignLayer
     ) {
       return;
     }
 
+    let cancelled = false;
+
     const loadDesigns = async () => {
-      const container = sceneRef.current.designContainer!;
-      // Remove only placeholder design sprites (those with masks), preserve canvas elements
-      const canvasSprites = sceneRef.current.canvasElementSprites;
-      const canvasSpriteSet = new Set(canvasSprites.values());
-      const toRemove: any[] = [];
-      container.children.forEach((child) => {
-        if (!canvasSpriteSet.has(child as Sprite)) {
-          toRemove.push(child);
-        }
-      });
-      toRemove.forEach((child) => {
-        try {
-          container.removeChild(child);
-          if ((child as any).destroy) {
-            (child as any).destroy();
-          }
-        } catch (e) {
-          // Ignore errors
-        }
-      });
+      const container = sceneRef.current.placeholderDesignLayer!;
+      
+      // Clear only placeholder design layer (never touch canvas elements layer)
+      container.removeChildren();
+      
+      if (DEBUG_LOGGING) {
+        console.log('[RealisticWebGLPreview] Loading placeholder designs:', {
+          currentView,
+          garmentTintHex,
+          placeholdersCount: placeholders.length
+        });
+      }
 
       const pxPerInch = sceneRef.current.pxPerInch || 1;
 
@@ -656,10 +753,14 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
         : internalDesignUrls;
 
       for (const placeholder of placeholders) {
+        if (cancelled) return;
+        
         const designUrl = currentDesignUrls[placeholder.id];
         if (!designUrl) continue;
 
         const designTex = await Assets.load(designUrl);
+        if (cancelled) return;
+        
         const designSprite = new Sprite(designTex);
 
         // Determine placeholder bounds in screen pixels.
@@ -737,9 +838,13 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
           mask.fill({ color: 0xffffff });
         }
 
+        // Add to placeholder design layer (not canvas elements layer)
         container.addChild(mask);
         container.addChild(designSprite);
         designSprite.mask = mask;
+        
+        // Set zIndex for proper sorting
+        designSprite.zIndex = 0;
 
         // Apply displacement if available.
         if (sceneRef.current.displacementFilter) {
@@ -852,41 +957,67 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
           (designSprite as any).cursor = 'default';
         }
       }
+      
+      // Sort placeholder designs by zIndex (though they typically all have zIndex 0)
+      container.children.sort((a, b) => {
+        const aZ = (a as any).zIndex || 0;
+        const bZ = (b as any).zIndex || 0;
+        return aZ - bZ;
+      });
+      
+      if (DEBUG_LOGGING) {
+        console.log('[RealisticWebGLPreview] Placeholder designs loaded:', {
+          currentView,
+          garmentTintHex,
+          placeholderDesignLayerSprites: container.children.length,
+          canvasElementsLayerSprites: sceneRef.current.canvasElementsLayer?.children.length || 0
+        });
+      }
     };
 
     loadDesigns();
-  }, [appReady, externalDesignUrls, placeholders, mockupImageUrl, activePlaceholder, filterToken, onSelectPlaceholder, previewMode, garmentTintHex]);
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [appReady, externalDesignUrls, placeholders, mockupImageUrl, activePlaceholder, filterToken, onSelectPlaceholder, previewMode, garmentTintHex, currentView]);
 
   // Update blend mode and opacity of existing design sprites when garment color changes
   useEffect(() => {
-    const container = sceneRef.current.designContainer;
-    if (!appReady || !container) return;
+    if (!appReady) return;
 
-    // Update blend mode and opacity for all design sprites based on garment color
-    container.children.forEach((child: any) => {
-      // Skip non-sprite children (like masks)
-      if (!(child instanceof Sprite)) return;
-      // Skip the displacement sprite if it exists
-      if (child === sceneRef.current.displacementSprite) return;
+    // Helper to update blend mode for all sprites in both layers
+    const updateBlendModes = () => {
+      const updateSprite = (child: any) => {
+        if (!(child instanceof Sprite)) return;
+        if (child === sceneRef.current.displacementSprite) return;
 
-      // Apply dynamic blend mode based on garment color luminance
-      if (garmentTintHex) {
-        const isDark = isDarkHex(garmentTintHex);
-        child.blendMode = isDark ? 'screen' : 'multiply';
-        child.alpha = isDark ? 1.0 : 0.9;
-      } else {
-        // Default: use multiply for untinted garments
-        child.blendMode = 'multiply';
-        child.alpha = 0.9;
+        if (garmentTintHex) {
+          const isDark = isDarkHex(garmentTintHex);
+          child.blendMode = isDark ? 'screen' : 'multiply';
+          child.alpha = isDark ? 1.0 : 0.9;
+        } else {
+          child.blendMode = 'multiply';
+          child.alpha = 0.9;
+        }
+      };
+
+      if (sceneRef.current.placeholderDesignLayer) {
+        sceneRef.current.placeholderDesignLayer.children.forEach(updateSprite);
       }
-    });
+      if (sceneRef.current.canvasElementsLayer) {
+        sceneRef.current.canvasElementsLayer.children.forEach(updateSprite);
+      }
+    };
+    
+    updateBlendModes();
   }, [appReady, garmentTintHex]);
 
   // Toggle interaction mode on existing design sprites when previewMode changes
   useEffect(() => {
-    const container = sceneRef.current.designContainer;
-    if (!appReady || !container) return;
-    container.children.forEach((c: any) => {
+    if (!appReady) return;
+    
+    const updateInteractions = (c: any) => {
       if (previewMode) {
         c.eventMode = 'none';
         try { c.cursor = 'default'; } catch { }
@@ -897,35 +1028,82 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
         c.eventMode = 'static';
         try { c.cursor = 'move'; } catch { }
       }
-    });
+    };
+    
+    // Only update placeholder design sprites (canvas elements don't need interaction)
+    if (sceneRef.current.placeholderDesignLayer) {
+      sceneRef.current.placeholderDesignLayer.children.forEach(updateInteractions);
+    }
   }, [previewMode, appReady]);
 
   // Render canvas elements (images added via graphics tab)
   useEffect(() => {
+    if (DEBUG_LOGGING) {
+      console.log('[RealisticWebGLPreview] Canvas elements effect triggered:', {
+        currentView,
+        garmentTintHex,
+        containersReady,
+        appReady,
+        hasApp: !!appRef.current,
+        mockupImageUrl: mockupImageUrl?.slice(-20),
+        hasGarmentSprite: !!sceneRef.current.garmentSprite,
+        hasCanvasElementsLayer: !!sceneRef.current.canvasElementsLayer,
+        totalCanvasElements: canvasElements.length,
+        canvasElementsByView: canvasElements.reduce((acc, el) => {
+          const view = el.view || 'no-view';
+          acc[view] = (acc[view] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+      });
+    }
+    
     if (
       !appReady ||
       !appRef.current ||
       !mockupImageUrl ||
       !sceneRef.current.garmentSprite ||
-      !sceneRef.current.designContainer
+      !sceneRef.current.canvasElementsLayer
     ) {
+      if (DEBUG_LOGGING) {
+        console.log('[RealisticWebGLPreview] Canvas elements effect: early return - containers not ready');
+      }
       return;
     }
 
+    let cancelled = false;
+
     const loadCanvasElements = async () => {
+      // Normalize view matching: case-insensitive and handle !el.view as "all views"
+      const normalizedCurrentView = currentView?.toLowerCase() || '';
+      
       // Filter canvas elements for current view and visible image elements
       const imageElements = canvasElements.filter(
-        (el) =>
-          el.type === 'image' &&
-          el.imageUrl &&
-          (el.view === currentView || !el.view) &&
-          el.visible !== false
+        (el) => {
+          if (el.type !== 'image' || !el.imageUrl || el.visible === false) return false;
+          
+          // Normalize element view for comparison
+          const elView = el.view?.toLowerCase() || '';
+          
+          // Match if: no view (appears on all), or view matches (case-insensitive)
+          return !el.view || elView === normalizedCurrentView;
+        }
       );
 
-      const container = sceneRef.current.designContainer!;
+      const container = sceneRef.current.canvasElementsLayer!;
       const canvasSprites = sceneRef.current.canvasElementSprites;
+      
+      if (DEBUG_LOGGING) {
+        console.log('[RealisticWebGLPreview] Loading canvas elements:', {
+          currentView,
+          normalizedCurrentView,
+          garmentTintHex,
+          totalElements: canvasElements.length,
+          filteredElements: imageElements.length
+        });
+      }
 
       // Remove sprites for elements that no longer exist or changed
+      // Only remove from canvas elements layer (never touch placeholder design layer)
       const currentElementIds = new Set(imageElements.map((el) => el.id));
       for (const [elementId, sprite] of canvasSprites.entries()) {
         if (!currentElementIds.has(elementId)) {
@@ -951,6 +1129,7 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
 
       // Load and render each canvas image element
       for (const element of imageElements) {
+        if (cancelled) return;
         if (!element.imageUrl) continue;
 
         // Skip if sprite already exists and update it
@@ -998,6 +1177,8 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
 
         try {
           const texture = await Assets.load(element.imageUrl);
+          if (cancelled) return;
+          
           const sprite = new Sprite(texture);
 
           // Set size first (needed for anchor calculation)
@@ -1057,31 +1238,43 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
             sprite.filters = [sceneRef.current.displacementFilter];
           }
 
-          // Set z-index (PixiJS uses zIndex property)
-          sprite.zIndex = element.zIndex || 0;
+          // Set z-index (PixiJS uses zIndex property) - ensure canvas elements are above placeholder designs
+          sprite.zIndex = (element.zIndex || 0) + 1000; // Offset to ensure above placeholder designs
 
           // Store reference to this sprite
           canvasSprites.set(element.id, sprite);
           container.addChild(sprite);
         } catch (error) {
-          console.error(`Failed to load canvas element image: ${element.imageUrl}`, error);
+          if (!cancelled) {
+            console.error(`Failed to load canvas element image: ${element.imageUrl}`, error);
+          }
         }
       }
 
-      // Sort children by zIndex
+      // Sort children by zIndex within canvas elements layer
       container.children.sort((a, b) => {
         const aZ = (a as any).zIndex || 0;
         const bZ = (b as any).zIndex || 0;
         return aZ - bZ;
       });
+      
+      if (DEBUG_LOGGING) {
+        console.log('[RealisticWebGLPreview] Canvas elements loaded:', {
+          currentView,
+          garmentTintHex,
+          placeholderDesignLayerSprites: sceneRef.current.placeholderDesignLayer?.children.length || 0,
+          canvasElementsLayerSprites: container.children.length
+        });
+      }
     };
 
     loadCanvasElements();
 
-    // Cleanup function - remove all canvas element sprites when dependencies change
+    // Cleanup function - cancel async operations and clear only canvas elements layer
     return () => {
-      if (sceneRef.current.designContainer && sceneRef.current.canvasElementSprites) {
-        const container = sceneRef.current.designContainer!;
+      cancelled = true;
+      if (sceneRef.current.canvasElementsLayer && sceneRef.current.canvasElementSprites) {
+        const container = sceneRef.current.canvasElementsLayer!;
         const canvasSprites = sceneRef.current.canvasElementSprites;
         for (const [elementId, sprite] of canvasSprites.entries()) {
           try {
@@ -1101,6 +1294,7 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
     currentView,
     garmentTintHex,
     filterToken, // Re-apply filters when displacement changes
+    containersReady, // Re-run when containers are set up after garment loading
   ]);
 
   // Handle design upload via callback if provided, otherwise use internal state

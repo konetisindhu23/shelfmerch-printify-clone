@@ -106,6 +106,16 @@ const ImageMagnifier: React.FC<ImageMagnifierProps> = ({ src, zoom = 2, alt }) =
               (Array.isArray(sp.galleryImages) && sp.galleryImages[0]?.url) ||
               undefined;
 
+            // Extract selectedColors and selectedSizes from designData
+            const colors =
+              sp.designData?.selectedColors && sp.designData.selectedColors.length > 0
+                ? sp.designData.selectedColors
+                : ['Default'];
+            const sizes =
+              sp.designData?.selectedSizes && sp.designData.selectedSizes.length > 0
+                ? sp.designData.selectedSizes
+                : ['One Size'];
+
             return {
               id,
               userId: store.userId,
@@ -122,8 +132,8 @@ const ImageMagnifier: React.FC<ImageMagnifierProps> = ({ src, zoom = 2, alt }) =
               designs: sp.designData?.designs || {},
               designBoundaries: sp.designData?.designBoundaries,
               variants: {
-                colors: [],
-                sizes: [],
+                colors,
+                sizes,
               },
               createdAt: sp.createdAt || new Date().toISOString(),
               updatedAt: sp.updatedAt || new Date().toISOString(),
@@ -222,6 +232,8 @@ const StoreProductPage: React.FC = () => {
   const [quantity, setQuantity] = useState(1);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
+  // Map of color -> size -> variant-specific selling price
+  const [variantPriceMap, setVariantPriceMap] = useState<Record<string, Record<string, number>>>({});
 
   const theme = store ? getTheme(store.theme) : getTheme('modern');
 
@@ -255,9 +267,8 @@ const StoreProductPage: React.FC = () => {
 
         const foundStore = storeResp.data as Store;
         setStore(foundStore);
-
         // 2) Load all published + active store products for this merchant,
-        //    then filter down to this specific store.
+        //    then filter down to this specific store for recommendations, etc.
         const spResp = await storeProductsApi.list({
           status: 'published',
           isActive: true,
@@ -265,21 +276,81 @@ const StoreProductPage: React.FC = () => {
 
         if (!spResp.success) {
           setProducts([]);
-          setProduct(null);
-          return;
+        } else {
+          const all = spResp.data || [];
+          const forStore = all.filter(
+            (sp: any) =>
+              sp.storeId === foundStore.id ||
+              sp.storeId === (foundStore as any)._id ||
+              String(sp.storeId) === String(foundStore.id)
+          );
+
+          // Map StoreProduct docs into frontend Product shape for listing/recommendations
+          const mapped: Product[] = forStore.map((sp: any) => {
+            const id = sp._id?.toString?.() || sp.id;
+            const basePrice: number =
+              typeof sp.sellingPrice === 'number'
+                ? sp.sellingPrice
+                : typeof sp.price === 'number'
+                ? sp.price
+                : 0;
+
+            const primaryImage =
+              sp.galleryImages?.find((img: any) => img.isPrimary)?.url ||
+              (Array.isArray(sp.galleryImages) && sp.galleryImages[0]?.url) ||
+              undefined;
+
+            // Fallback colors/sizes from designData for grid/recommendations
+            const colors =
+              sp.designData?.selectedColors && sp.designData.selectedColors.length > 0
+                ? sp.designData.selectedColors
+                : ['Default'];
+            const sizes =
+              sp.designData?.selectedSizes && sp.designData.selectedSizes.length > 0
+                ? sp.designData.selectedSizes
+                : ['One Size'];
+
+            return {
+              id,
+              userId: foundStore.userId,
+              name: sp.title || sp.name || 'Untitled product',
+              description: sp.description,
+              baseProduct: sp.catalogProductId || '',
+              price: basePrice,
+              compareAtPrice:
+                typeof sp.compareAtPrice === 'number' ? sp.compareAtPrice : undefined,
+              mockupUrl: primaryImage,
+              mockupUrls: Array.isArray(sp.galleryImages)
+                ? sp.galleryImages.map((img: any) => img.url).filter(Boolean)
+                : [],
+              designs: sp.designData?.designs || {},
+              designBoundaries: sp.designData?.designBoundaries,
+              variants: {
+                colors,
+                sizes,
+              },
+              createdAt: sp.createdAt || new Date().toISOString(),
+              updatedAt: sp.updatedAt || new Date().toISOString(),
+            };
+          });
+
+          setProducts(mapped);
         }
 
-        const all = spResp.data || [];
-        const forStore = all.filter(
-          (sp: any) =>
-            sp.storeId === foundStore.id ||
-            sp.storeId === (foundStore as any)._id ||
-            String(sp.storeId) === String(foundStore.id)
-        );
+        // 3) Load the specific product with populated variants for this page
+        try {
+          const publicResp = await storeProductsApi.getPublic(
+            (foundStore as any).id || (foundStore as any)._id,
+            productId,
+          );
 
-        // Map StoreProduct docs into frontend Product shape
-        const mapped: Product[] = forStore.map((sp: any) => {
-          const id = sp._id?.toString?.() || sp.id;
+          if (!publicResp.success || !publicResp.data) {
+            setProduct(null);
+            return;
+          }
+
+          const sp = publicResp.data as any;
+
           const basePrice: number =
             typeof sp.sellingPrice === 'number'
               ? sp.sellingPrice
@@ -292,22 +363,38 @@ const StoreProductPage: React.FC = () => {
             (Array.isArray(sp.galleryImages) && sp.galleryImages[0]?.url) ||
             undefined;
 
-          const variantsFromDesign = sp.designData?.variants as
-            | { colors?: string[]; sizes?: string[] }
-            | undefined;
+          // Derive available colors and sizes from StoreProductVariant documents (via populated catalogProductVariantId)
+          const variantDocs: any[] = Array.isArray(sp.variants) ? sp.variants : [];
+          const colorSet = new Set<string>();
+          const sizeSet = new Set<string>();
+          const priceMap: Record<string, Record<string, number>> = {};
 
-          const colors =
-            variantsFromDesign?.colors && variantsFromDesign.colors.length > 0
-              ? variantsFromDesign.colors
-              : ['Default'];
-          const sizes =
-            variantsFromDesign?.sizes && variantsFromDesign.sizes.length > 0
-              ? variantsFromDesign.sizes
-              : ['One Size'];
+          variantDocs.forEach((v) => {
+            const cv = v.catalogProductVariantId || {};
+            const color = typeof cv.color === 'string' ? cv.color : undefined;
+            const size = typeof cv.size === 'string' ? cv.size : undefined;
+            if (!color || !size) return;
 
-          return {
-            id,
+            // Prefer variant-specific sellingPrice; fallback to store product basePrice
+            const variantPrice: number =
+              typeof v.sellingPrice === 'number'
+                ? v.sellingPrice
+                : basePrice;
+
+            colorSet.add(color);
+            sizeSet.add(size);
+
+            if (!priceMap[color]) priceMap[color] = {};
+            priceMap[color][size] = variantPrice;
+          });
+
+          const colors = Array.from(colorSet.values());
+          const sizes = Array.from(sizeSet.values());
+
+          const currentProduct: Product = {
+            id: sp._id?.toString?.() || sp.id,
             userId: foundStore.userId,
+            // Title and description come from StoreProduct overrides
             name: sp.title || sp.name || 'Untitled product',
             description: sp.description,
             baseProduct: sp.catalogProductId || '',
@@ -321,24 +408,16 @@ const StoreProductPage: React.FC = () => {
             designs: sp.designData?.designs || {},
             designBoundaries: sp.designData?.designBoundaries,
             variants: {
-              colors,
-              sizes,
+              colors: colors.length ? colors : ['Default'],
+              sizes: sizes.length ? sizes : ['One Size'],
             },
             createdAt: sp.createdAt || new Date().toISOString(),
             updatedAt: sp.updatedAt || new Date().toISOString(),
           };
-        });
 
-        setProducts(mapped);
+          setProduct(currentProduct);
+          setVariantPriceMap(priceMap);
 
-        // 3) Select the specific product for this page
-        const currentProduct =
-          mapped.find((item) => item.id === productId) ||
-          null;
-
-        setProduct(currentProduct);
-
-        if (currentProduct) {
           const primaryMockup =
             currentProduct.mockupUrls?.[0] ||
             currentProduct.mockupUrl ||
@@ -346,6 +425,9 @@ const StoreProductPage: React.FC = () => {
           setActiveImage(primaryMockup);
           setSelectedColor(currentProduct.variants.colors[0] || 'Default');
           setSelectedSize(currentProduct.variants.sizes[0] || 'One Size');
+        } catch (err) {
+          console.error('Failed to load public store product with variants:', err);
+          setProduct(null);
         }
       } catch (err) {
         console.error('Failed to load store product page data:', err);
@@ -358,18 +440,15 @@ const StoreProductPage: React.FC = () => {
     loadStoreAndProduct();
   }, [subdomain, productId]);
 
-  useEffect(() => {
-    if (!store) return;
-    const savedCart = sessionStorage.getItem(`cart_${store.id}`);
-    if (savedCart) {
-      setCart(JSON.parse(savedCart));
-    }
-  }, [store]);
+  // Compute effective price for the currently selected variant
+  const effectivePrice = useMemo(() => {
+    if (!product) return 0;
+    const colorMap = variantPriceMap[selectedColor];
+    const specific = colorMap?.[selectedSize];
+    return typeof specific === 'number' ? specific : product.price;
+  }, [product, variantPriceMap, selectedColor, selectedSize]);
 
-  useEffect(() => {
-    if (!store) return;
-    sessionStorage.setItem(`cart_${store.id}`, JSON.stringify(cart));
-  }, [cart, store]);
+  // Cart is kept only in memory for this session; no local/session storage
 
   const handleAddToCart = useCallback(() => {
     if (!product) return;
@@ -378,9 +457,16 @@ const StoreProductPage: React.FC = () => {
       return;
     }
 
+    // Use variant-specific price if available for this color+size
+    const colorMap = variantPriceMap[selectedColor];
+    const unitPrice =
+      (colorMap && typeof colorMap[selectedSize] === 'number'
+        ? colorMap[selectedSize]
+        : product.price);
+
     const newItem: CartItem = {
       productId: product.id,
-      product,
+      product: { ...product, price: unitPrice },
       quantity,
       variant: { color: selectedColor, size: selectedSize },
     };
@@ -437,7 +523,9 @@ const StoreProductPage: React.FC = () => {
 
   const handleCheckout = () => {
     if (!store) return;
-    navigate(`/store/${store.subdomain}/checkout`);
+    navigate(`/store/${store.subdomain}/checkout`, {
+      state: { cart, storeId: store.id, subdomain: store.subdomain },
+    });
   };
 
   if (!store) {
@@ -643,7 +731,7 @@ const StoreProductPage: React.FC = () => {
 
           <div className="flex items-center gap-4">
             <p className="text-3xl font-semibold" style={{ color: theme.colors.primary }}>
-              ${product.price.toFixed(2)}
+              ${effectivePrice.toFixed(2)}
             </p>
             {product.compareAtPrice && product.compareAtPrice > product.price && (
               <p className="text-lg text-muted-foreground line-through">

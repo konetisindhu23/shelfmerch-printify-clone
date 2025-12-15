@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Minus, Plus, Trash2, ShoppingCart } from 'lucide-react';
 import { CartItem } from '@/types';
+import { useStoreAuth } from '@/contexts/StoreAuthContext';
 
 interface CartDrawerProps {
   open: boolean;
@@ -22,7 +23,8 @@ const CartDrawer: React.FC<CartDrawerProps> = ({
   onRemove,
   onCheckout,
 }) => {
-  const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const { isAuthenticated } = useStoreAuth();
+  const subtotal = cart.reduce((sum, item) => sum + (item.product.price || 0) * (item.quantity || 0), 0);
   const shipping = subtotal > 0 ? 5.99 : 0;
   const total = subtotal + shipping;
 
@@ -50,6 +52,7 @@ const CartDrawer: React.FC<CartDrawerProps> = ({
               <div className="space-y-4 py-4">
                 {cart.map((item) => {
                   const mockup = item.product.mockupUrls?.[0] || item.product.mockupUrl;
+                  const price = item.product.price || 0;
                   return (
                     <div
                       key={`${item.productId}-${item.variant.color}-${item.variant.size}`}
@@ -73,7 +76,7 @@ const CartDrawer: React.FC<CartDrawerProps> = ({
                         <p className="text-sm text-muted-foreground">
                           {item.variant.color} / {item.variant.size}
                         </p>
-                        <p className="font-semibold text-primary">${item.product.price.toFixed(2)}</p>
+                        <p className="font-semibold text-primary">${price.toFixed(2)}</p>
 
                         <div className="flex items-center gap-2 mt-2">
                           <Button
@@ -127,7 +130,7 @@ const CartDrawer: React.FC<CartDrawerProps> = ({
                 <span>${total.toFixed(2)}</span>
               </div>
               <Button className="w-full" size="lg" onClick={onCheckout}>
-                Proceed to Checkout
+                {isAuthenticated ? 'Proceed to Checkout' : 'Login / Register to Checkout'}
               </Button>
             </div>
           </>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -17,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { storeApi, storeProductsApi } from '@/lib/api';
 
@@ -30,6 +30,7 @@ interface IncomingVariant {
 }
 
 interface LocationState {
+  storeProductId?: string; // Draft ID from DesignEditor
   productId?: string;
   baseSellingPrice?: number;
   title?: string;
@@ -51,7 +52,36 @@ interface VariantRow {
 const ListingEditor = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { state } = location as { state: LocationState | null };
+
+  // Get storeProductId from route query or state
+  const storeProductId = searchParams.get('storeProductId') || state?.storeProductId;
+  const [draftData, setDraftData] = useState<any>(null);
+  const [isLoadingDraft, setIsLoadingDraft] = useState(false);
+
+  // Load draft from database if storeProductId is provided
+  useEffect(() => {
+    if (storeProductId) {
+      setIsLoadingDraft(true);
+      storeProductsApi.getById(storeProductId)
+        .then((response) => {
+          if (response.success && response.data) {
+            setDraftData(response.data);
+            console.log('Loaded draft for editing:', response.data);
+          } else {
+            toast.error('Failed to load draft data');
+          }
+        })
+        .catch((error) => {
+          console.error('Error loading draft:', error);
+          toast.error('Failed to load draft: ' + (error.message || 'Unknown error'));
+        })
+        .finally(() => {
+          setIsLoadingDraft(false);
+        });
+    }
+  }, [storeProductId]);
 
   const initialVariantRows: VariantRow[] = useMemo(() => {
     const incoming = state?.variants || [];
@@ -71,8 +101,22 @@ const ListingEditor = () => {
       };
     });
   }, [state]);
-  const [title, setTitle] = useState('wyz Logo Circle Graphic T-Shirt | Minimal Branding Tee');
-  const [description, setDescription] = useState('This relaxed-fit garment-dyed tee wears in like an old favorite...');
+
+  // Initialize title and description from draft or state
+  const [title, setTitle] = useState(() => {
+    return draftData?.title || state?.title || 'wyz Logo Circle Graphic T-Shirt | Minimal Branding Tee';
+  });
+  const [description, setDescription] = useState(() => {
+    return draftData?.description || state?.description || 'This relaxed-fit garment-dyed tee wears in like an old favorite...';
+  });
+
+  // Update title/description when draft loads
+  useEffect(() => {
+    if (draftData) {
+      if (draftData.title) setTitle(draftData.title);
+      if (draftData.description) setDescription(draftData.description);
+    }
+  }, [draftData]);
   const [addSizeTable, setAddSizeTable] = useState(false);
   const [personalizationEnabled, setPersonalizationEnabled] = useState(false);
   const [hideInStore, setHideInStore] = useState(false);
@@ -128,10 +172,10 @@ const ListingEditor = () => {
   };
 
   const handlePublish = () => {
-    // Publish: save StoreProduct and StoreProductVariant entries, then navigate to Stores for channel selection
+    // Publish: update the existing draft (PATCH) instead of creating new
     (async () => {
-      if (!state?.productId) {
-        toast.error('No product data available to publish');
+      if (!storeProductId) {
+        toast.error('No draft ID available. Please start from Design Editor.');
         return;
       }
 
@@ -154,23 +198,33 @@ const ListingEditor = () => {
           ),
         );
 
-        const payload: any = {
-          catalogProductId: state.productId,
-          sellingPrice: state.baseSellingPrice ?? variantRows[0]?.retailPrice ?? 0,
-          // Persist designData along with the selected colors & sizes for storefront usage
-          designData: {
-            ...(state.designData || {}),
-            ...(colors.length ? { selectedColors: colors } : {}),
-            ...(sizes.length ? { selectedSizes: sizes } : {}),
-          },
+        // Build update payload - only include fields that should be updated
+        const updates: any = {
+          status: 'published', // Change status from 'draft' to 'published'
         };
 
-        if (syncTitle) payload.title = title;
-        if (syncDescription) payload.description = description;
-        if (Array.isArray(state.galleryImages)) payload.galleryImages = state.galleryImages;
+        // Update designData with selected colors & sizes
+        const currentDesignData = draftData?.designData || state?.designData || {};
+        updates.designData = {
+          ...currentDesignData,
+          ...(colors.length ? { selectedColors: colors } : {}),
+          ...(sizes.length ? { selectedSizes: sizes } : {}),
+        };
 
+        if (syncTitle) updates.title = title;
+        if (syncDescription) updates.description = description;
+        if (Array.isArray(state?.galleryImages)) updates.galleryImages = state.galleryImages;
+
+        // Update selling price if available
+        if (state?.baseSellingPrice) {
+          updates.sellingPrice = state.baseSellingPrice;
+        } else if (variantRows[0]?.retailPrice) {
+          updates.sellingPrice = variantRows[0].retailPrice;
+        }
+
+        // Update variants if provided
         if (variantRows && variantRows.length > 0) {
-          payload.variants = variantRows.map((v) => ({
+          updates.variants = variantRows.map((v) => ({
             catalogProductVariantId: v.id,
             sku: v.sku,
             sellingPrice: v.retailPrice,
@@ -178,13 +232,23 @@ const ListingEditor = () => {
           }));
         }
 
-        const resp = await storeProductsApi.create(payload);
+        // PATCH the existing draft instead of creating new
+        const resp = await storeProductsApi.update(storeProductId, updates);
         if (resp && resp.success) {
           toast.success('Product published to your store');
-          // Pass along created store product and navigate to Stores for channel selection
-          navigate('/stores', { state: { ...state, ...{ title, description, variantRows, storeProduct: resp.data.storeProduct } } });
+          // Pass along updated store product and navigate to Stores for channel selection
+          navigate('/stores', { 
+            state: { 
+              ...state, 
+              storeProductId,
+              title, 
+              description, 
+              variantRows, 
+              storeProduct: resp.data 
+            } 
+          });
         } else {
-          toast.error('Failed to publish product: ' + (resp?.message || 'Unknown error'));
+          toast.error('Failed to publish product: Unknown error');
         }
       } catch (err: any) {
         console.error('Publish failed', err);
@@ -194,6 +258,17 @@ const ListingEditor = () => {
       }
     })();
   };
+
+  if (isLoadingDraft) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading draft data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-muted/20">

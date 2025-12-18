@@ -39,6 +39,7 @@ export const storeProductsApi = {
     title?: string;
     description?: string;
     tags?: string[];
+    status?: 'draft' | 'published';
     galleryImages?: Array<{ id: string; url: string; position: number; isPrimary?: boolean; imageType?: string; altText?: string }>;
     designData?: any;
     variants?: Array<{ catalogProductVariantId: string; sku: string; sellingPrice?: number; isActive?: boolean }>;
@@ -66,6 +67,27 @@ export const storeProductsApi = {
 
     const json = await response.json();
     return json as { success: boolean; message: string; data: any };
+  },
+
+  // Get a specific store product by ID
+  getById: async (id: string) => {
+    const token = getToken();
+    const response = await fetch(`${API_BASE_URL}/store-products/${id}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new ApiError(errorData.message || 'Failed to fetch store product', response.status, errorData.errors);
+    }
+
+    const json = await response.json();
+    return json as { success: boolean; data: any };
   },
 
   // List store products for current merchant (optionally filter)

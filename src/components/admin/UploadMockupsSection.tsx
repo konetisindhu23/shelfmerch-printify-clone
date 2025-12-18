@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import {
     ViewKey,
     Placeholder,
-    SampleMockupImage
+    SampleMockupImage,
+    DisplacementSettings
 } from '@/types/product';
 import { uploadApi } from '@/lib/api'; // Ensure this exists or use appropriate upload function
 import { useToast } from '@/hooks/use-toast';
@@ -57,6 +58,12 @@ export const UploadMockupsSection = ({
 
     const currentMockup = sampleMockups.find(m => m.id === activeMockupId) || null;
     const activePlaceholder = currentMockup?.placeholders?.find(p => p.id === activePlaceholderId) || null;
+
+    const defaultDisplacement: DisplacementSettings = {
+        scaleX: 20,
+        scaleY: 20,
+        contrastBoost: 1.5,
+    };
 
     const handleImageUpload = useCallback(async (view: ViewKey, file: File) => {
         setUploadingViews(prev => new Set(prev).add(view));
@@ -203,6 +210,23 @@ export const UploadMockupsSection = ({
         onSampleMockupsChange(updatedMockups);
     }, [currentMockup, sampleMockups, onSampleMockupsChange]);
 
+    const handleDisplacementChange = useCallback((updates: Partial<DisplacementSettings>) => {
+        if (!currentMockup) return;
+
+        const updatedMockups = sampleMockups.map((m) =>
+            m.id === currentMockup.id
+                ? {
+                    ...m,
+                    displacementSettings: {
+                        ...(m.displacementSettings || defaultDisplacement),
+                        ...updates,
+                    },
+                }
+                : m
+        );
+        onSampleMockupsChange(updatedMockups);
+    }, [currentMockup, sampleMockups, onSampleMockupsChange]);
+
 
     // Helper for ViewTabs to show counts/preview
     const placeholderCounts: Record<ViewKey, number> = {
@@ -322,7 +346,7 @@ export const UploadMockupsSection = ({
                             <CardHeader className="pb-3">
                                 <CardTitle className="text-sm">Mockup Settings</CardTitle>
                             </CardHeader>
-                            <CardContent className="space-y-3">
+                            <CardContent className="space-y-4">
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium">Image Type</label>
                                     <Select
@@ -351,6 +375,73 @@ export const UploadMockupsSection = ({
                                         onChange={(e) => handleMetadataChange('caption', e.target.value)}
                                         placeholder="e.g. Woman in park"
                                     />
+                                </div>
+
+                                {/* Per-mockup displacement settings */}
+                                <div className="pt-2 border-t space-y-2">
+                                    <p className="text-xs font-semibold text-muted-foreground">
+                                        Realism Settings (WebGL displacement)
+                                    </p>
+                                    {(() => {
+                                        const ds = currentMockup.displacementSettings || defaultDisplacement;
+                                        return (
+                                            <div className="space-y-3">
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center justify-between text-[11px]">
+                                                        <span>Displacement X</span>
+                                                        <span className="font-mono">{ds.scaleX}</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min={0}
+                                                        max={100}
+                                                        step={1}
+                                                        value={ds.scaleX}
+                                                        onChange={(e) =>
+                                                            handleDisplacementChange({ scaleX: Number(e.target.value) })
+                                                        }
+                                                        className="w-full"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center justify-between text-[11px]">
+                                                        <span>Displacement Y</span>
+                                                        <span className="font-mono">{ds.scaleY}</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min={0}
+                                                        max={100}
+                                                        step={1}
+                                                        value={ds.scaleY}
+                                                        onChange={(e) =>
+                                                            handleDisplacementChange({ scaleY: Number(e.target.value) })
+                                                        }
+                                                        className="w-full"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center justify-between text-[11px]">
+                                                        <span>Fold Contrast</span>
+                                                        <span className="font-mono">{ds.contrastBoost.toFixed(1)}</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min={1}
+                                                        max={5}
+                                                        step={0.1}
+                                                        value={ds.contrastBoost}
+                                                        onChange={(e) =>
+                                                            handleDisplacementChange({
+                                                                contrastBoost: Number(e.target.value),
+                                                            })
+                                                        }
+                                                        className="w-full"
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             </CardContent>
                         </Card>

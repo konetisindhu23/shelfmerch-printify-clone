@@ -64,6 +64,9 @@ export interface SampleMockupImage {
   viewKey: ViewKey;
   imageUrl: string; // Uploaded to S3
   placeholders: Placeholder[]; // Same Placeholder type as Design Section
+  // Optional per-mockup displacement settings for WebGL previews.
+  // If omitted, fall back to ProductDesignData.displacementSettings.
+  displacementSettings?: DisplacementSettings;
   metadata?: {
     imageType?: 'lifestyle' | 'flat-front' | 'flat-back' | 'folded' | 'person' | 'detail' | 'other';
     caption?: string;

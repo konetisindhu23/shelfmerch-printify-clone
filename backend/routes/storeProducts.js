@@ -189,6 +189,39 @@ router.get('/public/:storeId/:productId', async (req, res) => {
   }
 });
 
+// @route   GET /api/store-products/:id
+// @desc    Get a single store product by ID for the current merchant/superadmin
+// @access  Private (merchant, superadmin)
+router.get('/:id', protect, authorize('merchant', 'superadmin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid store product ID' });
+    }
+
+    const sp = await StoreProduct.findById(id);
+    if (!sp) {
+      return res.status(404).json({ success: false, message: 'Store product not found' });
+    }
+
+    const store = await Store.findById(sp.storeId);
+    if (!store) {
+      return res.status(404).json({ success: false, message: 'Store not found' });
+    }
+
+    // Merchants can only access their own stores; superadmin can access all
+    if (req.user.role !== 'superadmin' && String(store.merchant) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    return res.json({ success: true, data: sp });
+  } catch (error) {
+    console.error('Error fetching store product by id:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch store product' });
+  }
+});
+
 // @route   GET /api/store-products
 // @desc    List store products for current merchant (all their stores)
 // @access  Private (merchant, superadmin)

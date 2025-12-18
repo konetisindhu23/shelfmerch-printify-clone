@@ -1,398 +1,1071 @@
-
-import React, { useState, useMemo } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { storeProductsApi, productApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Filter, Image as ImageIcon } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Image as ImageIcon, Save, Check, Loader2 } from 'lucide-react';
+import { RealisticWebGLPreview } from '@/components/admin/RealisticWebGLPreview';
+import type { DisplacementSettings } from '@/types/product';
 import { toast } from 'sonner';
 
-// Helper component to render a single composite mockup
-const CompositeMockup = ({
-    sampleUrl,
-    designUrl,
-    placeholder,
-    tintColor
-}: {
-    sampleUrl: string;
-    designUrl?: string;
-    placeholder?: any;
-    tintColor?: string;
-}) => {
-    // Simple containment style for visual preview
-    // In a real app we might want more precise percentage-based positioning if placeholders are %, 
-    // but here we know placeholders are in INCHES and we don't know the image physical size easily without metadata.
-    // HOWEVER, we can try to center it if no placeholder data, or use simple absolute positioning if possible.
-    // Given the complexity of exact inch-to-pixel mapping without canvas, we will use a "best fit" approach for now:
-    // 1. Show the sample image.
-    // 2. Overlay the design image in the center (simplification) OR using rough percentages if we assume standard 12x16 print area or similar.
-    // For this requested "apply to placeholder" feature without canvas, we'll try to use the provided placeholder data if available, 
-    // but we might need to assume a standard canvas size or just center it for visual feel.
+interface LocationState {
+    storeProductId?: string;
+    productId?: string;
+    title?: string;
+}
 
-    // Refined approach: We don't have the *scale* of the sample image (pixels per inch) easily available here 
-    // unless we pass physical dimensions of the image. 
-    // But we do know the user wants "visual" confirmation.
+const MockupsLibrary = () => {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const state = (location.state || {}) as LocationState;
 
-    // IMPORTANT: For the immediate request "apply those images to the placeholder", 
-    // we will use a simplified CENTER overlay for now, as precise mapping requires re-implementing the PixiJS/Canvas logic here.
-    // If the user provided placeholder coordinates, we could try to respect them if we knew the image dimensions.
+    const [storeProductId] = useState<string | undefined>(state.storeProductId);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [storeProduct, setStoreProduct] = useState<any | null>(null);
+    const [sampleMockups, setSampleMockups] = useState<any[]>([]);
+    const [isLoadingMockups, setIsLoadingMockups] = useState(false);
+    const [catalogPhysicalDimensions, setCatalogPhysicalDimensions] = useState<{ width: number; height: number } | null>(null);
+
+    // Preview generation state
+    const [previewMap, setPreviewMap] = useState<Record<string, string>>({});
+    const [generatingMap, setGeneratingMap] = useState<Record<string, boolean>>({});
+    const previewCache = useRef<Record<string, string>>({});
+    
+    // WebGL preview state
+    // Higher displacement values for lifestyle mockups where garments are smaller in frame
+    const defaultDisplacementSettings: DisplacementSettings = {
+        scaleX: 45,
+        scaleY: 45,
+        contrastBoost: 2.0,
+    };
+    const [displacementSettings, setDisplacementSettings] = useState<DisplacementSettings>(defaultDisplacementSettings);
+    const webglContainerRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const [savedMockupUrls, setSavedMockupUrls] = useState<Record<string, string>>({});
+    const [savingMockups, setSavingMockups] = useState<Record<string, boolean>>({});
+    const [allSaved, setAllSaved] = useState(false);
+    const [isSavingAll, setIsSavingAll] = useState(false);
+    
+    // Track which mockups have WebGL ready
+    const [webglReadyMap, setWebglReadyMap] = useState<Record<string, boolean>>({});
+
+    // Convert placeholder inches to pixels based on mockup image dimensions
+    // This exactly replicates the coordinate system used in CanvasMockup.tsx:
+    // - 800x600 canvas with 40px padding
+    // - Mockup image scaled to fit and centered within effective area
+    // - Placeholders positioned using PX_PER_INCH from physical dimensions
+    const convertPlaceholderToPixels = (
+        placeholder: any,
+        mockupImgWidth: number,   // raw image width in pixels
+        mockupImgHeight: number,  // raw image height in pixels
+        physicalDimensions: { width: number; height: number }
+    ) => {
+        const physW = physicalDimensions.width;
+        const physH = physicalDimensions.height;
+
+        // CanvasMockup constants (must match admin editor exactly)
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 600;
+        const CANVAS_PADDING = 40;
+        const EFFECTIVE_W = CANVAS_WIDTH - CANVAS_PADDING * 2; // 720
+        const EFFECTIVE_H = CANVAS_HEIGHT - CANVAS_PADDING * 2; // 520
+
+        // PX_PER_INCH used in CanvasMockup for converting inches to stage pixels
+        const pxPerInchCanvas = Math.min(EFFECTIVE_W / physW, EFFECTIVE_H / physH);
+
+        // How the mockup image is sized and centered in CanvasMockup
+        const aspectRatio = mockupImgWidth / mockupImgHeight;
+        let imgCanvasW = EFFECTIVE_W;
+        let imgCanvasH = imgCanvasW / aspectRatio;
+        if (imgCanvasH > EFFECTIVE_H) {
+            imgCanvasH = EFFECTIVE_H;
+            imgCanvasW = EFFECTIVE_H * aspectRatio;
+        }
+
+        // Mockup image position in stage coordinates (top-left corner)
+        // This is how CanvasMockup.tsx centers the image:
+        // const x = canvasPadding + (maxWidth - width) / 2;
+        const imgStageX = CANVAS_PADDING + (EFFECTIVE_W - imgCanvasW) / 2;
+        const imgStageY = CANVAS_PADDING + (EFFECTIVE_H - imgCanvasH) / 2;
+
+        // Scale factor: from canvas pixels to raw image pixels
+        const scaleToRaw = mockupImgWidth / imgCanvasW;
+
+        // Check if placeholder uses inch values
+        const usesInches = placeholder.xIn !== undefined || placeholder.widthIn !== undefined;
+        
+        if (usesInches) {
+            const xIn = placeholder.xIn || 0;
+            const yIn = placeholder.yIn || 0;
+            const widthIn = placeholder.widthIn || 0;
+            const heightIn = placeholder.heightIn || 0;
+            const rotation = placeholder.rotationDeg || placeholder.rotation || 0;
+
+            // Step 1: Convert inches to stage coordinates (same formula as CanvasMockup)
+            // In CanvasMockup, placeholders are rendered at:
+            //   x_stage = canvasPadding + xIn * PX_PER_INCH
+            const xStage = CANVAS_PADDING + xIn * pxPerInchCanvas;
+            const yStage = CANVAS_PADDING + yIn * pxPerInchCanvas;
+            const wStage = widthIn * pxPerInchCanvas;
+            const hStage = heightIn * pxPerInchCanvas;
+
+            // Step 2: Get position relative to mockup image top-left in stage coords
+            const xRelStage = xStage - imgStageX;
+            const yRelStage = yStage - imgStageY;
+
+            // Step 3: Scale to raw image pixels
+            const x = xRelStage * scaleToRaw;
+            const y = yRelStage * scaleToRaw;
+            const width = wStage * scaleToRaw;
+            const height = hStage * scaleToRaw;
+            
+            console.log('📐 Converted inches to raw image pixels:', {
+                input: { xIn, yIn, widthIn, heightIn },
+                physicalDims: { physW, physH },
+                canvasGeometry: {
+                    pxPerInchCanvas: pxPerInchCanvas.toFixed(2),
+                    imgCanvasW: imgCanvasW.toFixed(1),
+                    imgCanvasH: imgCanvasH.toFixed(1),
+                    imgStageX: imgStageX.toFixed(1),
+                    imgStageY: imgStageY.toFixed(1),
+                },
+                stageCoords: {
+                    xStage: xStage.toFixed(1),
+                    yStage: yStage.toFixed(1),
+                    wStage: wStage.toFixed(1),
+                    hStage: hStage.toFixed(1),
+                },
+                relativeToImage: {
+                    xRelStage: xRelStage.toFixed(1),
+                    yRelStage: yRelStage.toFixed(1),
+                },
+                scaleToRaw: scaleToRaw.toFixed(3),
+                output: {
+                    x: Math.round(x),
+                    y: Math.round(y),
+                    width: Math.round(width),
+                    height: Math.round(height),
+                    rotation
+                }
+            });
+            
+            return { x, y, width, height, rotation };
+        } else {
+            // Already in pixels
+            return {
+                x: placeholder.x || 0,
+                y: placeholder.y || 0,
+                width: placeholder.width || 0,
+                height: placeholder.height || 0,
+                rotation: placeholder.rotationDeg || placeholder.rotation || 0
+            };
+        }
+    };
+
+    const generateMockupPreview = async (
+        mockupUrl: string,
+        designUrl: string,
+        placeholder: any,
+        physicalDimensions: { width: number; height: number }
+    ): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject('Could not get canvas context');
+
+            const mockupImg = new Image();
+            mockupImg.crossOrigin = 'anonymous';
+
+            mockupImg.onload = () => {
+                canvas.width = mockupImg.width;
+                canvas.height = mockupImg.height;
+
+                // Draw base mockup
+                ctx.drawImage(mockupImg, 0, 0);
+
+                const designImg = new Image();
+                designImg.crossOrigin = 'anonymous';
+
+                designImg.onload = () => {
+                    // Convert placeholder from inches to pixels
+                    const { x, y, width, height, rotation } = convertPlaceholderToPixels(
+                        placeholder,
+                        mockupImg.width,
+                        mockupImg.height,
+                        physicalDimensions
+                    );
+
+                    // Skip if placeholder has no valid dimensions
+                    if (width <= 0 || height <= 0) {
+                        console.warn('⚠️ Invalid placeholder dimensions after conversion:', { x, y, width, height });
+                        resolve(canvas.toDataURL('image/png')); // Return base mockup
+                        return;
+                    }
+
+                    ctx.save();
+
+                    // Move to placeholder center for rotation
+                    const centerX = x + width / 2;
+                    const centerY = y + height / 2;
+                    ctx.translate(centerX, centerY);
+                    ctx.rotate((rotation * Math.PI) / 180);
+
+                    // Clip to placeholder rectangle
+                    ctx.beginPath();
+                    ctx.rect(-width / 2, -height / 2, width, height);
+                    ctx.clip();
+
+                    // Draw design image with cover fit
+                    const designAspect = designImg.width / designImg.height;
+                    const placeholderAspect = width / height;
+
+                    let drawWidth, drawHeight, drawX, drawY;
+
+                    if (designAspect > placeholderAspect) {
+                        // Design is wider than placeholder
+                        drawHeight = height;
+                        drawWidth = height * designAspect;
+                        drawX = -drawWidth / 2;
+                        drawY = -height / 2;
+                    } else {
+                        // Design is taller than placeholder
+                        drawWidth = width;
+                        drawHeight = width / designAspect;
+                        drawX = -width / 2;
+                        drawY = -drawHeight / 2;
+                    }
+
+                    ctx.drawImage(designImg, drawX, drawY, drawWidth, drawHeight);
+
+                    ctx.restore();
+
+                    try {
+                        resolve(canvas.toDataURL('image/png'));
+                    } catch (e) {
+                        console.error('Canvas export failed (likely CORS):', e);
+                        reject(e);
+                    }
+                };
+
+                designImg.onerror = () => reject('Failed to load design image');
+                designImg.src = designUrl;
+            };
+
+            mockupImg.onerror = () => reject('Failed to load mockup image');
+            mockupImg.src = mockupUrl;
+        });
+    };
+
+    useEffect(() => {
+        const load = async () => {
+            if (!storeProductId) {
+                setError('Missing storeProductId. Please go back to the design editor and try again.');
+                return;
+            }
+            try {
+                setIsLoading(true);
+                setError(null);
+                const resp = await storeProductsApi.getById(storeProductId);
+                if (resp && resp.success !== false) {
+                    setStoreProduct(resp.data);
+                } else {
+                    setError('Failed to load store product');
+                }
+            } catch (e: any) {
+                setError(e?.message || 'Failed to load store product');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        load();
+    }, [storeProductId]);
+
+    // Fetch sampleMockups from productcatalogs collection
+    useEffect(() => {
+        const loadSampleMockups = async () => {
+            if (!storeProduct?.catalogProductId) {
+                return;
+            }
+
+            try {
+                setIsLoadingMockups(true);
+                const resp = await productApi.getById(storeProduct.catalogProductId);
+                if (resp && resp.success !== false && resp.data) {
+                    // Extract sampleMockups from product design
+                    const productDesign = resp.data.design || {};
+                    const mockups = productDesign.sampleMockups || [];
+                    setSampleMockups(mockups);
+                    
+                    // Also get physical dimensions for inch-to-pixel conversion
+                    const physDims = productDesign.physicalDimensions;
+                    if (physDims) {
+                        setCatalogPhysicalDimensions({
+                            width: physDims.width || 20,
+                            height: physDims.height || 24
+                        });
+                    } else {
+                        // Default physical dimensions (same as DesignEditor defaults)
+                        setCatalogPhysicalDimensions({ width: 20, height: 24 });
+                    }
+                    
+                    console.log('✅ Loaded sampleMockups from productcatalogs:', {
+                        catalogProductId: storeProduct.catalogProductId,
+                        sampleMockupsCount: mockups.length,
+                        physicalDimensions: physDims || 'using defaults (20x24)',
+                        sampleMockups: mockups.map((m: any) => ({
+                            id: m.id,
+                            viewKey: m.viewKey,
+                            imageUrl: m.imageUrl ? 'present' : 'missing',
+                            placeholders: m.placeholders?.map((p: any) => ({
+                                id: p.id,
+                                xIn: p.xIn,
+                                yIn: p.yIn,
+                                widthIn: p.widthIn,
+                                heightIn: p.heightIn
+                            }))
+                        }))
+                    });
+                }
+            } catch (e: any) {
+                console.error('❌ Error loading sampleMockups from productcatalogs:', e);
+                // Don't set error state - this is optional data
+            } finally {
+                setIsLoadingMockups(false);
+            }
+        };
+
+        if (storeProduct?.catalogProductId) {
+            loadSampleMockups();
+        }
+    }, [storeProduct?.catalogProductId]);
+
+    const designData = storeProduct?.designData || {};
+
+    // Extract design images per view from elements array
+    // The design is stored in designData.elements, each element has a `view` property and `imageUrl`
+    const designImagesByView: Record<string, string> = (() => {
+        const result: Record<string, string> = {};
+        
+        // Method 1: Check designData.views (object format like { front: { imageUrl: '...' } })
+        if (designData.views && typeof designData.views === 'object') {
+            Object.keys(designData.views).forEach((viewKey) => {
+                const normalizedKey = viewKey.toLowerCase();
+                const viewData = designData.views[viewKey];
+                if (viewData?.imageUrl) {
+                    result[normalizedKey] = viewData.imageUrl;
+                }
+            });
+        }
+        
+        // Method 2: Check designData.designUrlsByPlaceholder (keyed by view)
+        if (designData.designUrlsByPlaceholder && typeof designData.designUrlsByPlaceholder === 'object') {
+            Object.keys(designData.designUrlsByPlaceholder).forEach((viewKey) => {
+                const normalizedKey = viewKey.toLowerCase();
+                const viewDesigns = designData.designUrlsByPlaceholder[viewKey];
+                // Take the first design URL for this view
+                if (viewDesigns && typeof viewDesigns === 'object') {
+                    const urls = Object.values(viewDesigns);
+                    if (urls.length > 0 && typeof urls[0] === 'string') {
+                        result[normalizedKey] = urls[0] as string;
+                    }
+                }
+            });
+        }
+        
+        // Method 3: Extract from designData.elements (array of design elements)
+        if (Array.isArray(designData.elements) && designData.elements.length > 0) {
+            designData.elements.forEach((el: any) => {
+                if (el?.type === 'image' && el?.imageUrl && el?.visible !== false) {
+                    const viewKey = (el.view || 'front').toLowerCase();
+                    // If we don't have a design for this view yet, use this element's imageUrl
+                    // Prefer higher zIndex elements (later in array or explicit zIndex)
+                    if (!result[viewKey]) {
+                        result[viewKey] = el.imageUrl;
+                    }
+                }
+            });
+        }
+        
+        // Method 4: Check savedPreviewImages
+        if (designData.savedPreviewImages && typeof designData.savedPreviewImages === 'object') {
+            Object.keys(designData.savedPreviewImages).forEach((viewKey) => {
+                const normalizedKey = viewKey.toLowerCase();
+                if (!result[normalizedKey] && designData.savedPreviewImages[viewKey]) {
+                    result[normalizedKey] = designData.savedPreviewImages[viewKey];
+                }
+            });
+        }
+        
+        console.log('📐 Extracted designImagesByView:', result);
+        return result;
+    })();
+
+    // Batch generate previews for sample mockups
+    useEffect(() => {
+        const generateAllPreviews = async () => {
+            if (sampleMockups.length === 0) {
+                console.log('⏭️ No sample mockups to generate previews for');
+                return;
+            }
+            
+            const hasDesignImages = Object.keys(designImagesByView).length > 0;
+            if (!hasDesignImages) {
+                console.log('⏭️ No design images found to composite onto mockups');
+                console.log('   designData structure:', {
+                    hasViews: !!designData.views,
+                    hasElements: Array.isArray(designData.elements) ? designData.elements.length : 0,
+                    hasDesignUrlsByPlaceholder: !!designData.designUrlsByPlaceholder,
+                    hasSavedPreviewImages: !!designData.savedPreviewImages,
+                });
+                return;
+            }
+            
+            if (!catalogPhysicalDimensions) {
+                console.log('⏭️ Waiting for catalog physical dimensions...');
+                return;
+            }
+
+            console.log('🎨 Starting preview generation for', sampleMockups.length, 'mockups');
+            console.log('   Available design images by view:', designImagesByView);
+            console.log('   Physical dimensions:', catalogPhysicalDimensions);
+
+            const tasks = sampleMockups.map(async (mockup) => {
+                if (!mockup.id || !mockup.imageUrl) {
+                    console.log(`⏭️ Skipping mockup (no id or imageUrl):`, mockup);
+                    return;
+                }
+
+                // Normalize viewKey (case-insensitive)
+                const rawViewKey = mockup.viewKey || 'front';
+                const viewKey = rawViewKey.toLowerCase();
+
+                // Find design image for this view
+                const designImageUrl = designImagesByView[viewKey];
+
+                if (!designImageUrl) {
+                    console.log(`⏭️ No design image for view "${viewKey}" (mockup ${mockup.id})`);
+                    return;
+                }
+
+                // Cache key: mockupId:designUrl
+                const cacheKey = `${mockup.id}:${designImageUrl}`;
+                if (previewCache.current[cacheKey]) {
+                    console.log(`✅ Using cached preview for mockup ${mockup.id}`);
+                    setPreviewMap(prev => ({ ...prev, [mockup.id]: previewCache.current[cacheKey] }));
+                    return;
+                }
+
+                // Check if already generating
+                if (generatingMap[mockup.id]) {
+                    console.log(`⏳ Already generating preview for mockup ${mockup.id}`);
+                    return;
+                }
+
+                try {
+                    setGeneratingMap(prev => ({ ...prev, [mockup.id]: true }));
+
+                    // Use first placeholder if multiple exist
+                    const placeholder = mockup.placeholders?.[0];
+                    if (!placeholder) {
+                        console.warn(`⚠️ No placeholders for mockup ${mockup.id}`);
+                        return;
+                    }
+
+                    console.log(`🖼️ Generating preview for mockup ${mockup.id}:`, {
+                        viewKey,
+                        designImageUrl: designImageUrl.substring(0, 50) + '...',
+                        placeholder: {
+                            xIn: placeholder.xIn,
+                            yIn: placeholder.yIn,
+                            widthIn: placeholder.widthIn,
+                            heightIn: placeholder.heightIn,
+                            rotationDeg: placeholder.rotationDeg || 0
+                        },
+                        physicalDimensions: catalogPhysicalDimensions
+                    });
+
+                    const previewUrl = await generateMockupPreview(
+                        mockup.imageUrl, 
+                        designImageUrl, 
+                        placeholder,
+                        catalogPhysicalDimensions
+                    );
+
+                    previewCache.current[cacheKey] = previewUrl;
+                    setPreviewMap(prev => ({ ...prev, [mockup.id]: previewUrl }));
+                    console.log(`✅ Generated preview for mockup ${mockup.id}`);
+                } catch (e) {
+                    console.error(`❌ Failed to generate preview for mockup ${mockup.id}:`, e);
+                } finally {
+                    setGeneratingMap(prev => ({ ...prev, [mockup.id]: false }));
+                }
+            });
+
+            await Promise.all(tasks);
+        };
+
+        generateAllPreviews();
+    }, [sampleMockups, designImagesByView, catalogPhysicalDimensions]);
+
+    // Capture WebGL canvas for a specific mockup
+    const captureWebGLPreview = useCallback(async (mockupId: string): Promise<string | null> => {
+        const container = webglContainerRefs.current[mockupId];
+        if (!container) {
+            console.warn(`WebGL container not found for mockup ${mockupId}`);
+            return null;
+        }
+
+        // Wait for canvas to be ready
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+
+        // Find the canvas element
+        let canvas = container.querySelector('canvas');
+        if (!canvas) {
+            const divs = container.querySelectorAll('div');
+            for (const div of Array.from(divs)) {
+                canvas = div.querySelector('canvas');
+                if (canvas) break;
+            }
+        }
+
+        if (!canvas) {
+            console.warn(`Canvas element not found for mockup ${mockupId}`);
+            return null;
+        }
+
+        return new Promise((resolve) => {
+            canvas!.toBlob(async (blob) => {
+                if (!blob) {
+                    console.error('Failed to convert canvas to blob');
+                    resolve(null);
+                    return;
+                }
+
+                try {
+                    const formData = new FormData();
+                    formData.append('image', blob, `mockup-preview-${mockupId}.png`);
+
+                    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+                    const token = localStorage.getItem('token');
+
+                    const headers: HeadersInit = {};
+                    if (token) {
+                        headers['Authorization'] = `Bearer ${token}`;
+                    }
+
+                    const response = await fetch(`${API_BASE_URL}/api/upload/image`, {
+                        method: 'POST',
+                        headers,
+                        body: formData,
+                    });
+
+                    const data = await response.json();
+                    if (data.success && data.url) {
+                        console.log(`✅ Uploaded WebGL preview for mockup ${mockupId}:`, data.url);
+                        resolve(data.url);
+                    } else {
+                        console.error('Failed to upload preview:', data.message);
+                        resolve(null);
+                    }
+                } catch (error) {
+                    console.error('Error uploading preview:', error);
+                    resolve(null);
+                }
+            }, 'image/png', 1.0);
+        });
+    }, []);
+
+    // Save a single mockup preview
+    const saveMockupPreview = useCallback(async (mockupId: string) => {
+        if (!storeProductId) {
+            toast.error('No store product ID available');
+            return;
+        }
+
+        setSavingMockups(prev => ({ ...prev, [mockupId]: true }));
+
+        try {
+            const previewUrl = await captureWebGLPreview(mockupId);
+            if (!previewUrl) {
+                toast.error('Failed to capture preview');
+                return;
+            }
+
+            // Find the mockup to get its viewKey
+            const mockup = sampleMockups.find(m => m.id === mockupId);
+            const viewKey = mockup?.viewKey || 'front';
+
+            // Save to storeproducts database
+            await storeProductsApi.updateDesignPreview(storeProductId, {
+                viewKey: `mockup-${mockupId}`,
+                previewUrl,
+            });
+
+            setSavedMockupUrls(prev => ({ ...prev, [mockupId]: previewUrl }));
+            toast.success(`Saved preview for ${viewKey} mockup`);
+        } catch (error: any) {
+            console.error('Failed to save mockup preview:', error);
+            toast.error(error?.message || 'Failed to save preview');
+        } finally {
+            setSavingMockups(prev => ({ ...prev, [mockupId]: false }));
+        }
+    }, [storeProductId, captureWebGLPreview, sampleMockups]);
+
+    // Save all mockup previews
+    const saveAllMockupPreviews = useCallback(async () => {
+        if (!storeProductId) {
+            toast.error('No store product ID available');
+            return;
+        }
+
+        setIsSavingAll(true);
+        const savedUrls: Record<string, string> = {};
+        let successCount = 0;
+
+        toast.info(`Saving ${sampleMockups.length} mockup previews...`);
+
+        for (const mockup of sampleMockups) {
+            if (!mockup.id) continue;
+
+            setSavingMockups(prev => ({ ...prev, [mockup.id]: true }));
+
+            try {
+                // Wait a bit between captures to let WebGL settle
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                const previewUrl = await captureWebGLPreview(mockup.id);
+                if (previewUrl) {
+                    savedUrls[mockup.id] = previewUrl;
+                    successCount++;
+
+                    // Save to storeproducts
+                    await storeProductsApi.updateDesignPreview(storeProductId, {
+                        viewKey: `mockup-${mockup.id}`,
+                        previewUrl,
+                    });
+                }
+            } catch (error) {
+                console.error(`Failed to save mockup ${mockup.id}:`, error);
+            } finally {
+                setSavingMockups(prev => ({ ...prev, [mockup.id]: false }));
+            }
+        }
+
+        setSavedMockupUrls(prev => ({ ...prev, ...savedUrls }));
+        setAllSaved(successCount === sampleMockups.length);
+        setIsSavingAll(false);
+
+        if (successCount === sampleMockups.length) {
+            toast.success(`All ${successCount} mockup previews saved!`);
+        } else {
+            toast.warning(`Saved ${successCount} of ${sampleMockups.length} previews`);
+        }
+    }, [storeProductId, sampleMockups, captureWebGLPreview]);
+
+    // Mark WebGL as ready for a mockup
+    const handleWebGLReady = useCallback((mockupId: string) => {
+        setWebglReadyMap(prev => ({ ...prev, [mockupId]: true }));
+    }, []);
+
+    const previewImagesByView: Record<string, string> = designData.previewImagesByView || {};
+
+    // Fallback: derive image previews from designData.elements when previewImagesByView is empty
+    const imageElements: Array<any> = Array.isArray(designData.elements)
+        ? designData.elements.filter((el: any) => el?.type === 'image' && el?.imageUrl)
+        : [];
+
+    const imagesByView: Record<string, any[]> = imageElements.reduce((acc: Record<string, any[]>, el: any) => {
+        const viewKey = el.view || 'default';
+        if (!acc[viewKey]) acc[viewKey] = [];
+        acc[viewKey].push(el);
+        return acc;
+    }, {} as Record<string, any[]>);
 
     return (
-        <div className="relative w-full h-full bg-gray-50 flex items-center justify-center overflow-hidden">
-            {/* Base Mockup Image */}
-            <img
-                src={sampleUrl}
-                alt="Mockup Base"
-                className="absolute inset-0 w-full h-full object-contain z-0"
-            />
-
-            {/* Tint Overlay (Optional - approximate for now) */}
-            {tintColor && (
-                <div
-                    className="absolute inset-0 mix-blend-multiply pointer-events-none z-10"
-                    style={{ backgroundColor: tintColor, opacity: 0.3 }}
-                />
-            )}
-
-            {/* Design Overlay */}
-            {designUrl && (
-                <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-                    {/* 
-                    This is a simplified visual overlay. 
-                    Ideally, we would use `placeholder.left`, `placeholder.top`, `placeholder.width` etc. 
-                    if we had them as percentages. 
-                 */}
-                    <img
-                        src={designUrl}
-                        alt="Design"
-                        className="w-1/2 h-1/2 object-contain"
-                        // Optional: apply approximate rotation if placeholder has it
-                        style={{
-                            transform: placeholder?.rotationDeg ? `rotate(${placeholder.rotationDeg}deg)` : undefined
-                        }}
-                    />
+        <div className="min-h-screen bg-background">
+            <main className="max-w-6xl mx-auto px-6 py-8">
+                <div className="mb-6 flex items-center gap-3">
+                    <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+                        <ArrowLeft className="h-4 w-4" />
+                    </Button>
+                    <div>
+                        <h1 className="text-2xl font-bold">Mockups library</h1>
+                        <p className="text-muted-foreground text-sm">
+                            Preview design data fetched from the store product and prepare for mockup generation.
+                        </p>
+                    </div>
                 </div>
-            )}
+
+                {error && (
+                    <Card className="mb-6 border-destructive/40 bg-destructive/5">
+                        <CardHeader className="flex flex-row items-center gap-2 pb-2">
+                            <AlertTriangle className="h-4 w-4 text-destructive" />
+                            <CardTitle className="text-sm">Error</CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-sm text-destructive">{error}</CardContent>
+                    </Card>
+                )}
+
+                {isLoading && (
+                    <p className="text-sm text-muted-foreground">Loading store product…</p>
+                )}
+
+                {!isLoading && !error && storeProduct && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <Card className="lg:col-span-1">
+                            <CardHeader>
+                                <CardTitle>Store product</CardTitle>
+                                <CardDescription>Basic information and status</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-2 text-sm">
+                                <div>
+                                    <p className="text-muted-foreground">Title</p>
+                                    <p className="font-medium">{storeProduct.title || state.title || 'Untitled product'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">Status</p>
+                                    <p className="font-medium capitalize">{storeProduct.status || 'draft'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">Price</p>
+                                    <p className="font-medium">{storeProduct.sellingPrice ? `$${storeProduct.sellingPrice.toFixed(2)}` : '-'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">Store product ID</p>
+                                    <p className="font-mono text-xs break-all">{storeProductId}</p>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="lg:col-span-2">
+                            <CardHeader>
+                                <CardTitle>Design previews</CardTitle>
+                                <CardDescription>
+                                    Preview images per view (front, back, etc.) from stored preview URLs or image elements in <code>designData.elements</code>.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {Object.keys(previewImagesByView).length > 0 ? (
+                                    <Tabs defaultValue={Object.keys(previewImagesByView)[0]} className="w-full">
+                                        <TabsList className="mb-4">
+                                            {Object.keys(previewImagesByView).map((viewKey) => (
+                                                <TabsTrigger key={viewKey} value={viewKey} className="capitalize">
+                                                    {viewKey}
+                                                </TabsTrigger>
+                                            ))}
+                                        </TabsList>
+                                        {Object.entries(previewImagesByView).map(([viewKey, url]) => (
+                                            <TabsContent key={viewKey} value={viewKey} className="space-y-3">
+                                                <div className="border rounded-lg overflow-hidden bg-muted">
+                                                    <img
+                                                        src={url}
+                                                        alt={`${viewKey} preview`}
+                                                        className="w-full h-auto max-h-[420px] object-contain"
+                                                    />
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <Button variant="outline" size="sm" asChild>
+                                                        <a href={url} target="_blank" rel="noreferrer">
+                                                            Open original
+                                                        </a>
+                                                    </Button>
+                                                    <Button variant="outline" size="sm" asChild>
+                                                        <a href={url} download target="_blank" rel="noreferrer">
+                                                            Download
+                                                        </a>
+                                                    </Button>
+                                                </div>
+                                            </TabsContent>
+                                        ))}
+                                    </Tabs>
+                                ) : imageElements.length > 0 ? (
+                                    <Tabs defaultValue={Object.keys(imagesByView)[0]} className="w-full">
+                                        <TabsList className="mb-4">
+                                            {Object.keys(imagesByView).map((viewKey) => (
+                                                <TabsTrigger key={viewKey} value={viewKey} className="capitalize">
+                                                    {viewKey}
+                                                </TabsTrigger>
+                                            ))}
+                                        </TabsList>
+                                        {Object.entries(imagesByView).map(([viewKey, els]) => (
+                                            <TabsContent key={viewKey} value={viewKey} className="space-y-4">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    {els.map((el: any, idx: number) => (
+                                                        <div key={`${viewKey}-${idx}`} className="border rounded-lg bg-muted overflow-hidden">
+                                                            <img
+                                                                src={el.imageUrl}
+                                                                alt={`${viewKey} design element ${idx + 1}`}
+                                                                className="w-full h-auto max-h-[260px] object-contain bg-background"
+                                                            />
+                                                            <div className="px-3 py-2 border-t text-xs text-muted-foreground space-y-1">
+                                                                <div className="flex justify-between">
+                                                                    <span className="font-medium">placeholderId</span>
+                                                                    <span className="font-mono truncate max-w-[140px]">{el.placeholderId || '-'}</span>
+                                                                </div>
+                                                                <div className="flex justify-between">
+                                                                    <span>pos</span>
+                                                                    <span className="font-mono">
+                                                                        ({Math.round(el.x ?? 0)}, {Math.round(el.y ?? 0)})
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between">
+                                                                    <span>size</span>
+                                                                    <span className="font-mono">
+                                                                        {Math.round(el.width ?? 0)}×{Math.round(el.height ?? 0)}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="flex justify-between">
+                                                                    <span>rotation</span>
+                                                                    <span className="font-mono">{Math.round(el.rotation ?? 0)}°</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </TabsContent>
+                                        ))}
+                                    </Tabs>
+                                ) : (
+                                    <div className="border rounded-lg bg-muted/40 p-8 text-center text-muted-foreground">
+                                        <ImageIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                        <p className="text-sm mb-1">No preview images or image elements found for this design.</p>
+                                        <p className="text-xs">Create image elements in the design editor, then save/publish the design.</p>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
+
+                {!isLoading && !error && !storeProduct && (
+                    <p className="text-sm text-muted-foreground">No store product loaded.</p>
+                )}
+
+                {/* Realistic WebGL Sample Mockups */}
+                {storeProduct && (
+                    <div className="mt-8 space-y-6">
+
+                        {/* Sample Mockups with Realistic WebGL Preview */}
+                        <Card>
+                            <CardHeader className="flex flex-row items-center justify-between">
+                                <div>
+                                    <CardTitle>Realistic Mockup Previews</CardTitle>
+                                    <CardDescription>
+                                        WebGL-rendered realistic previews with displacement mapping
+                                    </CardDescription>
+                                </div>
+                                {sampleMockups.length > 0 && Object.keys(designImagesByView).length > 0 && (
+                                    <Button
+                                        onClick={saveAllMockupPreviews}
+                                        disabled={isSavingAll || allSaved}
+                                        className="gap-2"
+                                    >
+                                        {isSavingAll ? (
+                                            <>
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                Saving All...
+                                            </>
+                                        ) : allSaved ? (
+                                            <>
+                                                <Check className="h-4 w-4" />
+                                                All Saved
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Save className="h-4 w-4" />
+                                                Save All Previews
+                                            </>
+                                        )}
+                                    </Button>
+                                )}
+                            </CardHeader>
+                            <CardContent>
+                                {isLoadingMockups ? (
+                                    <div className="flex items-center justify-center py-8">
+                                        <div className="text-center">
+                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+                                            <p className="text-sm text-muted-foreground">Loading sample mockups...</p>
+                                        </div>
+                                    </div>
+                                ) : sampleMockups.length > 0 ? (
+                                    <div className="space-y-6">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                                <span className="font-medium text-foreground">{sampleMockups.length}</span>
+                                                <span>sample mockup(s) with realistic WebGL preview</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                                            {sampleMockups.map((mockup: any, index: number) => {
+                                                const viewKey = (mockup.viewKey || 'front').toLowerCase();
+                                                const hasDesignForView = !!designImagesByView[viewKey];
+                                                const hasPlaceholder = Array.isArray(mockup.placeholders) && mockup.placeholders.length > 0;
+                                                const isSaving = savingMockups[mockup.id];
+                                                const isSaved = !!savedMockupUrls[mockup.id];
+                                                const mockupDisplacement: DisplacementSettings =
+                                                    mockup.displacementSettings || displacementSettings || defaultDisplacementSettings;
+                                                
+                                                // Build designUrlsByPlaceholder for this mockup's view
+                                                const mockupDesignUrls: Record<string, string> = {};
+                                                if (hasDesignForView && hasPlaceholder) {
+                                                    mockup.placeholders.forEach((ph: any) => {
+                                                        if (ph.id && designImagesByView[viewKey]) {
+                                                            mockupDesignUrls[ph.id] = designImagesByView[viewKey];
+                                                        }
+                                                    });
+                                                }
+                                                
+                                                return (
+                                                    <div key={mockup.id || index} className="border rounded-lg bg-background overflow-hidden">
+                                                        {/* Header */}
+                                                        <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="text-sm font-medium capitalize">{mockup.viewKey || 'front'}</span>
+                                                                {hasDesignForView ? (
+                                                                    <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✓ Design</span>
+                                                                ) : (
+                                                                    <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">⚠️ No design</span>
+                                                                )}
+                                                                {isSaved && (
+                                                                    <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">💾 Saved</span>
+                                                                )}
+                                                            </div>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() => saveMockupPreview(mockup.id)}
+                                                                disabled={isSaving || !hasDesignForView}
+                                                                className="gap-1"
+                                                            >
+                                                                {isSaving ? (
+                                                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                                                ) : isSaved ? (
+                                                                    <Check className="h-3 w-3" />
+                                                                ) : (
+                                                                    <Save className="h-3 w-3" />
+                                                                )}
+                                                                {isSaving ? 'Saving...' : isSaved ? 'Saved' : 'Save'}
+                                                            </Button>
+                                                        </div>
+                                                        
+                                                        {/* WebGL Preview */}
+                                                        {mockup.imageUrl && hasDesignForView && hasPlaceholder && catalogPhysicalDimensions ? (
+                                                            <div 
+                                                                ref={(el) => { webglContainerRefs.current[mockup.id] = el; }}
+                                                                className=" relative bg-white flex justify-center items-center"
+                                                                style={{ minHeight: 400 }}
+                                                            >
+                                                                <RealisticWebGLPreview
+                                                                    key={`webgl-${mockup.id}-${designImagesByView[viewKey]?.slice(-20) || ''}`}
+                                                                    mockupImageUrl={mockup.imageUrl}
+                                                                    activePlaceholder={null}
+                                                                    placeholders={(mockup.placeholders || []).map((p: any) => ({
+                                                                        ...p,
+                                                                        rotationDeg: p.rotationDeg ?? 0,
+                                                                    }))}
+                                                                    physicalWidth={catalogPhysicalDimensions.width}
+                                                                    physicalHeight={catalogPhysicalDimensions.height}
+                                                                    settings={mockupDisplacement}
+                                                                    onSettingsChange={(settings) => {
+                                                                        // Update local state map for this mockup
+                                                                        setSavedMockupUrls((prev) => ({ ...prev }));
+                                                                        // Also persist in storeProduct.designData if desired in future
+                                                                        sampleMockups.forEach((m) => {
+                                                                            if (m.id === mockup.id) {
+                                                                                m.displacementSettings = settings;
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                    designUrlsByPlaceholder={mockupDesignUrls}
+                                                                    previewMode={true}
+                                                                    currentView={viewKey}
+                                                                    canvasPadding={40}
+                                                                    PX_PER_INCH={Math.min(720 / catalogPhysicalDimensions.width, 520 / catalogPhysicalDimensions.height)}
+                                                                />
+                                                            </div>
+                                                        ) : mockup.imageUrl ? (
+                                                            <div className="relative bg-muted flex items-center justify-center" style={{ minHeight: 400 }}>
+                                                                <img
+                                                                    src={mockup.imageUrl}
+                                                                    alt={`Sample mockup ${index + 1}`}
+                                                                    className="max-w-full h-auto max-h-[400px] object-contain"
+                                                                    crossOrigin="anonymous"
+                                                                />
+                                                                {!hasDesignForView && (
+                                                                    <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
+                                                                        <p className="text-sm text-muted-foreground">No design image for {viewKey} view</p>
+                                                                    </div>
+                                                                )}
+                                                                {!hasPlaceholder && (
+                                                                    <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
+                                                                        <p className="text-sm text-muted-foreground">No placeholder configured</p>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="h-[400px] flex items-center justify-center bg-muted">
+                                                                <p className="text-sm text-muted-foreground">No mockup image</p>
+                                                            </div>
+                                                        )}
+                                                        
+                                                        {/* Footer info */}
+                                                        <div className="px-4 py-2 border-t bg-muted/20 text-xs text-muted-foreground">
+                                                            <span className="font-mono">{mockup.id?.slice(0, 20)}...</span>
+                                                            {savedMockupUrls[mockup.id] && (
+                                                                <span className="ml-2 text-green-600">
+                                                                    ✓ Saved to AWS
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ) : storeProduct.catalogProductId ? (
+                                    <div className="border rounded-lg bg-muted/40 p-8 text-center text-muted-foreground">
+                                        <ImageIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                        <p className="text-sm mb-1">No sample mockups found in product catalog.</p>
+                                        <p className="text-xs">The product catalog may not have sample mockups configured.</p>
+                                    </div>
+                                ) : (
+                                    <div className="border rounded-lg bg-muted/40 p-4 text-center text-sm text-muted-foreground">
+                                        <p>No catalogProductId available to fetch sample mockups.</p>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                        
+                        {/* Continue to Listing Editor */}
+                        {sampleMockups.length > 0 && Object.keys(savedMockupUrls).length > 0 && (
+                            <div className="flex justify-end">
+                                <Button
+                                    size="lg"
+                                    onClick={() => {
+                                        navigate('/listing-editor', {
+                                            state: {
+                                                ...state,
+                                                storeProductId,
+                                                savedMockupUrls,
+                                            },
+                                        });
+                                    }}
+                                >
+                                    Continue to Listing Editor →
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </main>
         </div>
     );
 };
 
-export default function MockupsLibrary() {
-    const location = useLocation();
-    const navigate = useNavigate();
-    const state = location.state as any;
-
-    const {
-        productId,
-        baseSellingPrice,
-        title,
-        description,
-        galleryImages: initialGalleryImages,
-        designData,
-        variants = [],
-        // New inputs for composition
-        sampleMockups = [],
-        designImagesByView = {},
-    } = state || {};
-
-    // Generate the "virtual" list of mockups to display based on Cartesian product:
-    // Sample Mockups x Variants (Colors)
-    const mockupsList = useMemo(() => {
-        if (!state) return [];
-        const list: any[] = [];
-        const seenCombinations = new Set();
-
-        // Determine which colors to generate for
-        // Ideally we generate for all available variant colors
-        const uniqueColors = Array.from(new Set(variants.map((v: any) => v.color)));
-
-        sampleMockups.forEach((sample: any) => {
-            uniqueColors.forEach((color: unknown) => { // Type assertion handled by usage
-                const variant = variants.find((v: any) => v.color === color);
-                const colorHex = variant?.colorHex || '#ffffff';
-
-                const comboId = `${sample.id} -${color} `;
-                if (seenCombinations.has(comboId)) return;
-                seenCombinations.add(comboId);
-
-                const designUrl = designImagesByView[sample.viewKey];
-
-                if (designUrl) {
-                    list.push({
-                        id: comboId,
-                        sampleMockupId: sample.id,
-                        viewKey: sample.viewKey,
-                        color: color as string,
-                        colorHex,
-                        sampleUrl: sample.imageUrl,
-                        designUrl: designUrl,
-                        placeholder: sample.placeholders?.[0], // Use first placeholder
-                        metadata: sample.metadata
-                    });
-                }
-            });
-        });
-        return list;
-    }, [state, sampleMockups, variants, designImagesByView]);
-
-
-    const [selectedMockupIds, setSelectedMockupIds] = useState<string[]>([]);
-    const [viewFilter, setViewFilter] = useState<string>('all');
-    const [colorFilter, setColorFilter] = useState<string>('all');
-
-    // Auto-select all by default if needed, or leave empty. Let's auto-select all.
-    React.useEffect(() => {
-        if (!state) {
-            navigate('/admin/products');
-        } else if (mockupsList.length > 0 && selectedMockupIds.length === 0) {
-            setSelectedMockupIds(mockupsList.map(m => m.id));
-        }
-    }, [state, navigate, mockupsList.length]); // intended to run once on load
-
-    const uniqueColors = useMemo(() => Array.from(new Set(mockupsList.map(m => m.color))), [mockupsList]);
-    const uniqueViews = useMemo(() => Array.from(new Set(mockupsList.map(m => m.viewKey))), [mockupsList]);
-
-    const filteredMockups = useMemo(() => {
-        return mockupsList.filter(m => {
-            if (viewFilter !== 'all' && m.viewKey !== viewFilter) return false;
-            if (colorFilter !== 'all' && m.color !== colorFilter) return false;
-            return true;
-        });
-    }, [mockupsList, viewFilter, colorFilter]);
-
-    const handleToggleSelect = (id: string) => {
-        setSelectedMockupIds(prev =>
-            prev.includes(id) ? prev.filter(mid => mid !== id) : [...prev, id]
-        );
-    };
-
-    const handleSelectAll = (select: boolean) => {
-        if (select) {
-            const newIds = filteredMockups.map(m => m.id);
-            setSelectedMockupIds(prev => Array.from(new Set([...prev, ...newIds])));
-        } else {
-            const filteredIds = filteredMockups.map(m => m.id);
-            setSelectedMockupIds(prev => prev.filter(id => !filteredIds.includes(id)));
-        }
-    };
-
-    const handleContinue = () => {
-        // Here lies a challenge: The listing editor expects URL strings for gallery images.
-        // But we now have COMPOSITE definitions (Sample + Design + Color).
-        // 
-        // Option 1: We pass these definition objects to ListingEditor, and Update ListingEditor to render them dynamically too.
-        // Option 2: We try to 'bake' them here (canvas toblob) before navigating. Can be slow.
-        // Option 3: We assume for now we just pass the SAMPLE URL (background) as a placeholder, 
-        //           but ideally the User wants the final mockup. 
-        //
-        // Given the requirement is usually to "Produce" a listing with ready images.
-        // BUT, since we removed the server-side generation, we must either:
-        // A) Generate CLIENT SIDE here (using html2canvas or similar) and upload/blob them.
-        // B) Pass a "MockupConfig" object instead of a URL string to ListingEditor.
-        //
-        // I will assume Option B for "Navigation" but for "Persistence" (Publishing to Etsy/Shopify) we will eventually need real images.
-        // For this step ("Implement MockupsLibrary Page"), visual display was the goal.
-        // I will pass constructed objects that ListingEditor *might* interpret, or for now just the sampleUrl 
-        // but likely we need to address the "Real Image" requirement later.
-
-        // Workaround: We'll construct a special URL or object. 
-        // Check: ListingEditor likely maps these to simple <img> tags.
-        // For now, let's pass the definition in `metadata` so ListingEditor "could" be updated to render them composite
-        // OR we just assume the user accepts the limitation for now.
-
-        const selectedObjects = mockupsList.filter(m => selectedMockupIds.includes(m.id));
-
-        const newGalleryImages = selectedObjects.map((m, idx) => ({
-            id: m.id,
-            // TEMP: Use the sample background URL effectively. 
-            // Realistically we need the composite. 
-            // For now, we pass sampleUrl but attach extensive metadata for possible future client-side rendering
-            url: m.sampleUrl,
-            position: (initialGalleryImages?.length || 0) + idx,
-            isPrimary: false,
-            imageType: 'mockup',
-            altText: `${title} - ${m.viewKey} - ${m.color} `,
-            metadata: {
-                isComposite: true,
-                designUrl: m.designUrl,
-                sampleUrl: m.sampleUrl,
-                color: m.color,
-                colorHex: m.colorHex,
-                placeholder: m.placeholder
-            }
-        }));
-
-        const finalGalleryImages = [...(initialGalleryImages || []), ...newGalleryImages];
-
-        navigate('/listing-editor', {
-            state: {
-                ...state,
-                galleryImages: finalGalleryImages,
-                // Pass composites state forward if we need to come back
-                sampleMockups,
-                designImagesByView
-            }
-        });
-    };
-
-    if (!state) return null;
-
-    return (
-        <div className="min-h-screen flex flex-col bg-muted/10">
-            {/* Header */}
-            <div className="bg-background border-b h-16 px-6 flex items-center justify-between sticky top-0 z-10">
-                <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-                        <ArrowLeft className="w-5 h-5" />
-                    </Button>
-                    <div>
-                        <h1 className="font-semibold text-lg">Select Mockups</h1>
-                        <p className="text-xs text-muted-foreground flex items-center gap-2">
-                            {filteredMockups.length} mockups available • {selectedMockupIds.length} selected
-                        </p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-3">
-                    <Button variant="outline" onClick={() => handleSelectAll(false)} disabled={selectedMockupIds.length === 0}>
-                        Deselect All
-                    </Button>
-                    <Button variant="outline" onClick={() => handleSelectAll(true)}>
-                        Select All Visible
-                    </Button>
-                    <div className="h-8 w-px bg-border mx-2" />
-                    <Button onClick={handleContinue} className="gap-2">
-                        Next: Listing Details
-                        <ArrowRight className="w-4 h-4" />
-                    </Button>
-                </div>
-            </div>
-
-            <div className="flex-1 container mx-auto py-8 px-4 flex gap-6">
-                {/* Sidebar Filters */}
-                <div className="w-64 flex-shrink-0 space-y-6">
-                    <Card>
-                        <CardContent className="p-4 space-y-6">
-                            <div>
-                                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                                    <Filter className="w-4 h-4" /> Views
-                                </h3>
-                                <div className="space-y-2">
-                                    <Button
-                                        variant={viewFilter === 'all' ? 'secondary' : 'ghost'}
-                                        className="w-full justify-start h-8 text-sm"
-                                        onClick={() => setViewFilter('all')}
-                                    >
-                                        All Views
-                                    </Button>
-                                    {uniqueViews.map((view: any) => (
-                                        <Button
-                                            key={view}
-                                            variant={viewFilter === view ? 'secondary' : 'ghost'}
-                                            className="w-full justify-start h-8 text-sm capitalize"
-                                            onClick={() => setViewFilter(view)}
-                                        >
-                                            {view}
-                                        </Button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div>
-                                <h3 className="text-sm font-medium mb-3">Colors</h3>
-                                <ScrollArea className="h-[300px] pr-2">
-                                    <div className="space-y-2">
-                                        <Button
-                                            variant={colorFilter === 'all' ? 'secondary' : 'ghost'}
-                                            className="w-full justify-start h-8 text-sm"
-                                            onClick={() => setColorFilter('all')}
-                                        >
-                                            All Colors
-                                        </Button>
-                                        {uniqueColors.map((color: any) => {
-                                            const variant = variants.find((v: any) => v.color === color);
-                                            const cColor = variant?.colorHex || color;
-                                            return (
-                                                <Button
-                                                    key={color}
-                                                    variant={colorFilter === color ? 'secondary' : 'ghost'}
-                                                    className="w-full justify-start h-8 text-sm flex items-center gap-2"
-                                                    onClick={() => setColorFilter(color)}
-                                                >
-                                                    <span
-                                                        className="w-3 h-3 rounded-full border shadow-sm"
-                                                        style={{ backgroundColor: cColor }}
-                                                    />
-                                                    <span className="capitalize text-xs truncate">{color}</span>
-                                                </Button>
-                                            );
-                                        })}
-                                    </div>
-                                </ScrollArea>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-
-                {/* Main Grid */}
-                <div className="flex-1">
-                    {filteredMockups.length === 0 ? (
-                        <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed rounded-lg bg-muted/50">
-                            <ImageIcon className="w-10 h-10 text-muted-foreground/50 mb-3" />
-                            <p className="text-muted-foreground font-medium">No mockups found</p>
-                            <p className="text-xs text-muted-foreground mt-1">Try adjusting your filters</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                            {filteredMockups.map((mockup: any) => {
-                                const isSelected = selectedMockupIds.includes(mockup.id);
-                                return (
-                                    <div
-                                        key={mockup.id}
-                                        className={`
-                                            group relative aspect - square rounded - lg border - 2 overflow - hidden cursor - pointer transition - all
-                                            ${isSelected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-muted-foreground/50'}
-`}
-                                        onClick={() => handleToggleSelect(mockup.id)}
-                                    >
-                                        {/* Composite Render */}
-                                        <CompositeMockup
-                                            sampleUrl={mockup.sampleUrl}
-                                            designUrl={mockup.designUrl}
-                                            placeholder={mockup.placeholder}
-                                            tintColor={mockup.colorHex} // Pass hex for subtle tinting if needed
-                                        />
-
-                                        {/* Selection Checkmark */}
-                                        <div className="absolute top-2 right-2 z-30">
-                                            <div className={`
-w - 6 h - 6 rounded - full flex items - center justify - center transition - all shadow - sm
-                                                ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-white/80 backdrop-blur border text-transparent group-hover:text-muted-foreground'}
-`}>
-                                                <Check className="w-4 h-4" />
-                                            </div>
-                                        </div>
-
-                                        {/* Footer Information */}
-                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent pt-8 pb-2 px-3 z-30">
-                                            <div className="flex justify-between items-end">
-                                                <Badge variant="secondary" className="text-[10px] h-5 px-1.5 capitalize bg-white/90 text-black">
-                                                    {mockup.viewKey}
-                                                </Badge>
-                                                <div
-                                                    className="w-4 h-4 rounded-full border border-white/50 shadow-sm"
-                                                    style={{ backgroundColor: mockup.colorHex }}
-                                                    title={mockup.color}
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-}
+export default MockupsLibrary;

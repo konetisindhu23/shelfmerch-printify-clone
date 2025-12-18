@@ -811,15 +811,17 @@ export const RealisticWebGLPreview: React.FC<RealisticWebGLPreviewProps> = ({
         // Dynamic blend mode based on garment color luminance
         // For dark garments: use 'screen' blend mode with full opacity to brighten the design
         // For light garments: use 'multiply' blend mode to integrate naturally with garment color
-        // if (garmentTintHex) {
-        //   const isDark = isDarkHex(garmentTintHex);
-        //   designSprite.blendMode = isDark ? 'screen' : 'multiply';
-        //   designSprite.alpha = isDark ? 1.0 : 0.9; // Full opacity for dark garments, slightly reduced for light
-        // } else {
-        //   // Default: use multiply for untinted garments (assumed light/white)
-        //   designSprite.blendMode = 'multiply';
-        //   designSprite.alpha = 0.9;
-        // }
+        // This is ESSENTIAL for realistic mockups - makes designs pick up fabric texture
+        if (garmentTintHex) {
+          const isDark = isDarkHex(garmentTintHex);
+          designSprite.blendMode = isDark ? 'screen' : 'multiply';
+          designSprite.alpha = isDark ? 1.0 : 0.85; // Full opacity for dark garments, slightly reduced for light
+        } else {
+          // Default: use multiply for untinted garments (assumed light/white)
+          // This makes the design blend naturally with the fabric texture
+          designSprite.blendMode = 'multiply';
+          designSprite.alpha = 0.85;
+        }
 
         // Build mask matching placeholder shape.
         const mask = new Graphics();

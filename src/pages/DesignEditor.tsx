@@ -1569,55 +1569,88 @@ const DesignEditor: React.FC = () => {
       }
       setIsPublishing(true);
 
+      // Define required variables from product and state
+      const catalogProductId = product._id || product.id;
+      const sellingPrice = product.catalogue?.basePrice || 0;
+      const galleryImages = product.galleryImages || [];
+      
+      // Build design payload with current design state
+      const designPayload = {
+        views: product.design?.views || [],
+        designUrlsByPlaceholder,
+        elements: elements.map(el => ({
+          ...el,
+          // Include only serializable properties
+        })),
+        savedPreviewImages,
+        displacementSettings,
+      };
+
+      // Build variants from selected colors and sizes
+      const listingVariants: Array<{ color: string; size: string; price: number }> = [];
+      selectedColors.forEach(color => {
+        const sizesForColor = selectedSizesByColor[color] || selectedSizes;
+        sizesForColor.forEach(size => {
+          listingVariants.push({
+            color,
+            size,
+            price: sellingPrice,
+          });
+        });
+      });
+
+      // Validate that we have at least some variants
+      if (listingVariants.length === 0 && selectedColors.length > 0) {
+        toast.error('Please select at least one size for your colors');
+        return;
+      }
+
+      // --- CREATE DRAFT IN DATABASE ---
+      // Create a draft store product with the entire elements array
+      const draftPayload = {
+        catalogProductId,
+        sellingPrice,
+        status: 'draft' as const,
+        designData: {
+          elements: elements, // Save entire elements array (do not rename fields)
+          designUrlsByPlaceholder,
+          views: product.design?.views || [],
+          savedPreviewImages,
+          displacementSettings,
+        },
+        // Optional: include basic product info if available
+        title: product?.catalogue?.name,
+        description: product?.catalogue?.description,
+      };
+
+      const draftResponse = await storeProductsApi.create(draftPayload);
+      if (!draftResponse || !draftResponse.success) {
+        toast.error('Failed to create draft: ' + (draftResponse?.message || 'Unknown error'));
+        return;
+      }
+
+      const storeProductId = draftResponse.data?.storeProduct?._id || draftResponse.data?._id;
+      if (!storeProductId) {
+        toast.error('Failed to get draft ID from server response');
+        return;
+      }
+
+      console.log('Draft created with storeProductId:', storeProductId);
+
       // --- NEW MOCKUP GENERATION FLOW ---
 
       // Check if product has sample mockups
-      const sampleMockups = product.design?.sampleMockups || [];
+      const sampleMockups = (product.design as any)?.sampleMockups || [];
       const hasSampleMockups = sampleMockups.length > 0;
       console.log('Mockup Generation Init:', { hasSampleMockups, count: sampleMockups.length, selectedColors });
 
-      // 1. Capture design images for each view (transparent PNG of the *design* only)
-      //    We need a way to export just the design layer from the current editor.
-      //    DesignEditor currently uses RealisticWebGLPreview which composites garment + design.
-      //    We can reuse `savedPreviewImages` if they are high res enough, BUT they include the garment.
-      //    For realistic mockups on NEW backgrounds, we needs the DESIGN ONLY (transparent).
-      //    
-      //    Workaround: Since we can't easily extract just the design from the complex WebGL/Canvas setup 
-      //    without refactoring the whole editor to support "Export Design Layer", 
-      //    we will use the `designUrlsByPlaceholder` map. 
-      //    
-      //    Limitation: This only works for uploaded images associated with placeholders. 
-      //    It does NOT include text/shapes added via the canvas tools unless we render them to an image first.
-      //
-      //    Future Improvement: Implement `exportDesignLayer()` in RealisticWebGLPreview 
-      //    that hides the garment and renders only the design container to a blob.
-
-      //    For now, we will proceed with `designUrlsByPlaceholder` as the source content.
-      //    If a view has multiple placeholders, we might need to composite them.
-      //    Simplification: We take the primary design URL for the view.
-
-      // 2. Identify design images for composition in MockupsLibrary
-      // We pass the raw design URL for each view. 
-      // MockupsLibrary will composite these onto the sample mockups.
-      const designImagesByView: Record<string, string> = {};
-
-      ['front', 'back', 'left', 'right'].forEach(viewKey => {
-        const viewDesignUrls = designUrlsByPlaceholder[viewKey] || {};
-        // Take the first available design.
-        const firstPlaceholderId = Object.keys(viewDesignUrls)[0];
-        if (firstPlaceholderId && viewDesignUrls[firstPlaceholderId]) {
-          designImagesByView[viewKey] = viewDesignUrls[firstPlaceholderId];
-        }
-      });
-
-      console.log('Design Images for Composition:', designImagesByView);
-
-      // 3. Navigate to MockupsLibrary if sample mockups exist
+      // Navigate to MockupsLibrary if sample mockups exist
       if (hasSampleMockups) {
-        toast.success(`Proceeding to library to select mockups.`);
+        toast.success('Proceeding to library to select mockups.');
 
         navigate('/mockups-library', {
           state: {
+            storeProductId, // Pass the draft ID
             productId: catalogProductId,
             baseSellingPrice: sellingPrice,
             title: product?.catalogue?.name,
@@ -1627,7 +1660,6 @@ const DesignEditor: React.FC = () => {
             variants: listingVariants,
             // Pass minimal data needed for composition
             sampleMockups,
-            designImagesByView,
             displacementSettings: product.design?.displacementSettings
           }
         });
@@ -1636,6 +1668,7 @@ const DesignEditor: React.FC = () => {
         toast.success('Design ready. Continue in Listing editor to finish publishing.');
         navigate('/listing-editor', {
           state: {
+            storeProductId, // Pass the draft ID
             productId: catalogProductId,
             baseSellingPrice: sellingPrice,
             title: product?.catalogue?.name,
@@ -1651,8 +1684,9 @@ const DesignEditor: React.FC = () => {
       console.error('Publish error:', e);
       toast.error(e?.message || 'Failed to publish');
     } finally {
+      setIsPublishing(false);
     }
-  }, [user, product, elements, currentView, selectedColors, selectedSizes, selectedSizesByColor, placeholders, PX_PER_INCH, stageSize, canvasPadding, navigate, savedPreviewImages, designUrlsByPlaceholder]);
+  }, [user, product, elements, currentView, selectedColors, selectedSizes, selectedSizesByColor, placeholders, PX_PER_INCH, stageSize, canvasPadding, navigate, savedPreviewImages, designUrlsByPlaceholder, displacementSettings]);
 
   const handleSave = async () => {
     try {

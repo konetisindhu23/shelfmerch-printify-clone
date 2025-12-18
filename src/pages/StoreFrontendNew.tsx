@@ -54,7 +54,15 @@ const StoreFrontendNew = () => {
                   ? sp.price
                   : 0;
 
-            const primaryImage =
+            // Extract previewImagesByView from designData
+            // previewImagesByView is an object with mockup IDs as keys and image URLs as values
+            const previewImagesByView = sp.designData?.previewImagesByView || sp.previewImagesByView || {};
+            const previewImageUrls = Object.values(previewImagesByView).filter((url): url is string => 
+              typeof url === 'string' && url.length > 0
+            );
+            
+            // Use first preview image as primary, fallback to galleryImages if no previews
+            const primaryImage = previewImageUrls[0] || 
               sp.galleryImages?.find((img: any) => img.isPrimary)?.url ||
               (Array.isArray(sp.galleryImages) && sp.galleryImages[0]?.url) ||
               undefined;
@@ -76,9 +84,12 @@ const StoreFrontendNew = () => {
               compareAtPrice:
                 typeof sp.compareAtPrice === 'number' ? sp.compareAtPrice : undefined,
               mockupUrl: primaryImage,
-              mockupUrls: Array.isArray(sp.galleryImages)
-                ? sp.galleryImages.map((img: any) => img.url).filter(Boolean)
-                : [],
+              // Use previewImagesByView URLs first, fallback to galleryImages if no previews
+              mockupUrls: previewImageUrls.length > 0
+                ? previewImageUrls
+                : (Array.isArray(sp.galleryImages)
+                    ? sp.galleryImages.map((img: any) => img.url).filter(Boolean)
+                    : []),
               designs: sp.designData?.designs || {},
               designBoundaries: sp.designData?.designBoundaries,
               variants: {

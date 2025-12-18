@@ -312,7 +312,12 @@ const Dashboard = () => {
                   </thead>
                   <tbody className="divide-y">
                     {storeProducts.map((sp: any) => {
-                      const mockup = sp.galleryImages?.find((img: any) => img.isPrimary)?.url || sp.galleryImages?.[0]?.url;
+                      // Extract previewImagesByView - it's an object with mockup IDs as keys and image URLs as values
+                      const previewImagesByView = sp.designData?.previewImagesByView || sp.previewImagesByView || {};
+                      const previewImageUrls = Object.values(previewImagesByView).filter((url): url is string => 
+                        typeof url === 'string' && url.length > 0
+                      );
+                      const mockup = previewImageUrls[0] || undefined;
                       const isSelected = selectedProducts.includes(sp._id);
                       return (
                         <tr key={sp._id} className="hover:bg-muted/20 transition-colors">

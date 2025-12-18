@@ -97,10 +97,17 @@ const ImageMagnifier: React.FC<ImageMagnifierProps> = ({ src, zoom = 2, alt }) =
                   ? sp.price
                   : 0;
 
-            const primaryImage =
-              sp.galleryImages?.find((img: any) => img.isPrimary)?.url ||
-              (Array.isArray(sp.galleryImages) && sp.galleryImages[0]?.url) ||
-              undefined;
+              const previewImagesByView = sp.designData?.previewImagesByView || sp.previewImagesByView || {};
+              const previewImageUrls = Object.values(previewImagesByView).filter((url): url is string => 
+                typeof url === 'string' && url.length > 0
+              );
+
+             // Use first preview image as primary, fallback to galleryImages if no previews
+             const primaryImage = previewImageUrls[0] || 
+               sp.galleryImages?.find((img: any) => img.isPrimary)?.url ||
+               (Array.isArray(sp.galleryImages) && sp.galleryImages[0]?.url) ||
+               undefined;
+            
 
             // Extract selectedColors and selectedSizes from designData
             const colors =
@@ -129,8 +136,8 @@ const ImageMagnifier: React.FC<ImageMagnifierProps> = ({ src, zoom = 2, alt }) =
               compareAtPrice:
                 typeof sp.compareAtPrice === 'number' ? sp.compareAtPrice : undefined,
               mockupUrl: primaryImage,
-              mockupUrls: Array.isArray(sp.galleryImages)
-                ? sp.galleryImages.map((img: any) => img.url).filter(Boolean)
+              mockupUrls: Array.isArray(sp.previewImagesUrl)
+                ? sp.previewImagesUrl.map((img: any) => img.url).filter(Boolean)
                 : [],
               designs: sp.designData?.designs || {},
               designBoundaries: sp.designData?.designBoundaries,
@@ -326,8 +333,8 @@ const StoreProductPage: React.FC = () => {
               compareAtPrice:
                 typeof sp.compareAtPrice === 'number' ? sp.compareAtPrice : undefined,
               mockupUrl: primaryImage,
-              mockupUrls: Array.isArray(sp.galleryImages)
-                ? sp.galleryImages.map((img: any) => img.url).filter(Boolean)
+              mockupUrls: Array.isArray(sp.previewImagesUrl)
+                ? sp.previewImagesUrl.map((img: any) => img.url).filter(Boolean)
                 : [],
               designs: sp.designData?.designs || {},
               designBoundaries: sp.designData?.designBoundaries,
@@ -365,8 +372,8 @@ const StoreProductPage: React.FC = () => {
                 : 0;
 
           const primaryImage =
-            sp.galleryImages?.find((img: any) => img.isPrimary)?.url ||
-            (Array.isArray(sp.galleryImages) && sp.galleryImages[0]?.url) ||
+            sp.previewImagesUrl?.find((img: any) => img.isPrimary)?.url ||
+            (Array.isArray(sp.previewImagesUrl) && sp.previewImagesUrl[0]?.url) ||
             undefined;
 
           // Derive available colors and sizes from StoreProductVariant documents (via populated catalogProductVariantId)
@@ -408,8 +415,8 @@ const StoreProductPage: React.FC = () => {
             compareAtPrice:
               typeof sp.compareAtPrice === 'number' ? sp.compareAtPrice : undefined,
             mockupUrl: primaryImage,
-            mockupUrls: Array.isArray(sp.galleryImages)
-              ? sp.galleryImages.map((img: any) => img.url).filter(Boolean)
+            mockupUrls: Array.isArray(sp.previewImagesUrl)
+              ? sp.previewImagesurl.map((img: any) => img.url).filter(Boolean)
               : [],
             designs: sp.designData?.designs || {},
             designBoundaries: sp.designData?.designBoundaries,

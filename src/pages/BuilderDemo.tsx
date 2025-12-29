@@ -90,7 +90,7 @@ const BuilderDemo: React.FC = () => {
       try {
         setStoreLoading(true);
         const response = await storeApi.getById(storeId, true);
-        
+
         if (response.success && response.data) {
           setStore(response.data);
         } else {
@@ -218,7 +218,7 @@ const BuilderDemo: React.FC = () => {
 
   // Check if there's a local draft that hasn't been uploaded to backend
   const [hasLocalDraft, setHasLocalDraft] = useState(false);
-  
+
   useEffect(() => {
     if (store?.id) {
       const draftKey = `store_builder_draft_${store.id}`;
@@ -229,10 +229,10 @@ const BuilderDemo: React.FC = () => {
 
   const handleImportLocalDraft = async () => {
     if (!store?.id) return;
-    
+
     const draftKey = `store_builder_draft_${store.id}`;
     const localDraft = localStorage.getItem(draftKey);
-    
+
     if (!localDraft) {
       toast.info('No local draft found');
       return;

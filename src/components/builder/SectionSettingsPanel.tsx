@@ -443,7 +443,7 @@ const SectionSettingsPanel: React.FC<SectionSettingsPanelProps> = ({
         );
 
       case 'product-collection': {
-        const collections: Array<{ name: string; subcategoryId?: string; categoryId?: string; imageUrl?: string }> = 
+        const collections: Array<{ name: string; subcategoryId?: string; categoryId?: string; imageUrl?: string }> =
           Array.isArray(section.settings.collections) ? section.settings.collections : [];
 
         const addCollection = () => {
@@ -453,12 +453,12 @@ const SectionSettingsPanel: React.FC<SectionSettingsPanelProps> = ({
         const updateCollection = (index: number, field: string, value: string) => {
           const updated = [...collections];
           const currentCollection = updated[index] || { name: '', subcategoryId: '', categoryId: '', imageUrl: '' };
-          
+
           // If category is being updated, validate and clear subcategory if invalid
           if (field === 'categoryId') {
             const newCategoryId = value as CategoryId;
             const currentSubcategory = currentCollection.subcategoryId || '';
-            
+
             // If there's a subcategory, check if it's still valid for the new category
             if (currentSubcategory && newCategoryId) {
               const validSubcategories = getSubcategories(newCategoryId);
@@ -474,7 +474,7 @@ const SectionSettingsPanel: React.FC<SectionSettingsPanelProps> = ({
           } else {
             updated[index] = { ...currentCollection, [field]: value };
           }
-          
+
           handleSettingChange('collections', updated);
         };
 
@@ -597,7 +597,7 @@ const SectionSettingsPanel: React.FC<SectionSettingsPanelProps> = ({
                               const updated = [...collections];
                               const currentCollection = updated[index] || { name: '', subcategoryId: '', categoryId: '', imageUrl: '' };
                               const currentSubcategory = currentCollection.subcategoryId || '';
-                              
+
                               // Check if current subcategory is valid for new category
                               if (currentSubcategory && value) {
                                 const validSubcategories = getSubcategories(value as CategoryId);
@@ -684,8 +684,8 @@ const SectionSettingsPanel: React.FC<SectionSettingsPanelProps> = ({
         // Normalize images to new structure
         const images: Array<{ url: string; caption?: string }> = Array.isArray(section.settings.images)
           ? section.settings.images.map((img: any) =>
-              typeof img === 'string' ? { url: img, caption: '' } : img
-            )
+            typeof img === 'string' ? { url: img, caption: '' } : img
+          )
           : [];
 
         const handleLayoutChange = (newLayout: string) => {
@@ -854,7 +854,7 @@ const SectionSettingsPanel: React.FC<SectionSettingsPanelProps> = ({
                     Add image
                   </Button>
                 </div>
-                
+
                 {images.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4 border border-dashed rounded">
                     No images yet. Click "Add image" to get started.
@@ -955,165 +955,165 @@ const SectionSettingsPanel: React.FC<SectionSettingsPanelProps> = ({
         );
       }
 
-    // case 'video': {
-    //   const [uploading, setUploading] = useState(false);
-    //   const fileInputRef = useRef<HTMLInputElement>(null);
+      // case 'video': {
+      //   const [uploading, setUploading] = useState(false);
+      //   const fileInputRef = useRef<HTMLInputElement>(null);
 
-    //   const handleVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    //     const file = event.target.files?.[0];
-    //     if (!file) return;
+      //   const handleVideoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      //     const file = event.target.files?.[0];
+      //     if (!file) return;
 
-    //     // Validate file type
-    //     const validVideoTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo'];
-    //     if (!validVideoTypes.includes(file.type)) {
-    //       toast.error('Invalid file type', {
-    //         description: 'Please upload a valid video file (MP4, WebM, OGG, MOV, or AVI)',
-    //       });
-    //       return;
-    //     }
+      //     // Validate file type
+      //     const validVideoTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo'];
+      //     if (!validVideoTypes.includes(file.type)) {
+      //       toast.error('Invalid file type', {
+      //         description: 'Please upload a valid video file (MP4, WebM, OGG, MOV, or AVI)',
+      //       });
+      //       return;
+      //     }
 
-    //     // Validate file size (max 100MB)
-    //     const maxSize = 100 * 1024 * 1024; // 100MB
-    //     if (file.size > maxSize) {
-    //       toast.error('File too large', {
-    //         description: 'Video file must be less than 100MB',
-    //       });
-    //       return;
-    //     }
+      //     // Validate file size (max 100MB)
+      //     const maxSize = 100 * 1024 * 1024; // 100MB
+      //     if (file.size > maxSize) {
+      //       toast.error('File too large', {
+      //         description: 'Video file must be less than 100MB',
+      //       });
+      //       return;
+      //     }
 
-    //     setUploading(true);
-    //     try {
-    //       const videoUrl = await uploadApi.uploadVideo(file, 'videos');
-    //       handleSettingChange('videoUrl', videoUrl);
-    //       handleSettingChange('provider', 'custom');
-    //       toast.success('Video uploaded successfully', {
-    //         description: 'Your video has been uploaded and is ready to use',
-    //       });
-    //     } catch (error) {
-    //       console.error('Error uploading video:', error);
-    //       toast.error('Upload failed', {
-    //         description: error instanceof Error ? error.message : 'Failed to upload video. Please try again.',
-    //       });
-    //     } finally {
-    //       setUploading(false);
-    //       // Reset file input
-    //       if (fileInputRef.current) {
-    //         fileInputRef.current.value = '';
-    //       }
-    //     }
-    //   };
+      //     setUploading(true);
+      //     try {
+      //       const videoUrl = await uploadApi.uploadVideo(file, 'videos');
+      //       handleSettingChange('videoUrl', videoUrl);
+      //       handleSettingChange('provider', 'custom');
+      //       toast.success('Video uploaded successfully', {
+      //         description: 'Your video has been uploaded and is ready to use',
+      //       });
+      //     } catch (error) {
+      //       console.error('Error uploading video:', error);
+      //       toast.error('Upload failed', {
+      //         description: error instanceof Error ? error.message : 'Failed to upload video. Please try again.',
+      //       });
+      //     } finally {
+      //       setUploading(false);
+      //       // Reset file input
+      //       if (fileInputRef.current) {
+      //         fileInputRef.current.value = '';
+      //       }
+      //     }
+      //   };
 
-    //   const handleRemoveVideo = () => {
-    //     handleSettingChange('videoUrl', '');
-    //     if (fileInputRef.current) {
-    //       fileInputRef.current.value = '';
-    //     }
-    //   };
+      //   const handleRemoveVideo = () => {
+      //     handleSettingChange('videoUrl', '');
+      //     if (fileInputRef.current) {
+      //       fileInputRef.current.value = '';
+      //     }
+      //   };
 
-    //   return (
-    //     <div className="space-y-4">
-    //       <div className="space-y-2">
-    //         <Label htmlFor="video-url">Video URL</Label>
-    //         <div className="flex gap-2">
-    //           <Input
-    //             id="video-url"
-    //             value={section.settings.videoUrl || ''}
-    //             onChange={(e) => handleSettingChange('videoUrl', e.target.value)}
-    //             placeholder="https://www.youtube.com/watch?v=... or upload a video file"
-    //             className="flex-1"
-    //           />
-    //           {section.settings.videoUrl && (
-    //             <Button
-    //               type="button"
-    //               variant="outline"
-    //               size="icon"
-    //               onClick={handleRemoveVideo}
-    //               title="Remove video"
-    //             >
-    //               <X className="h-4 w-4" />
-    //             </Button>
-    //           )}
-    //         </div>
-    //       </div>
+      //   return (
+      //     <div className="space-y-4">
+      //       <div className="space-y-2">
+      //         <Label htmlFor="video-url">Video URL</Label>
+      //         <div className="flex gap-2">
+      //           <Input
+      //             id="video-url"
+      //             value={section.settings.videoUrl || ''}
+      //             onChange={(e) => handleSettingChange('videoUrl', e.target.value)}
+      //             placeholder="https://www.youtube.com/watch?v=... or upload a video file"
+      //             className="flex-1"
+      //           />
+      //           {section.settings.videoUrl && (
+      //             <Button
+      //               type="button"
+      //               variant="outline"
+      //               size="icon"
+      //               onClick={handleRemoveVideo}
+      //               title="Remove video"
+      //             >
+      //               <X className="h-4 w-4" />
+      //             </Button>
+      //           )}
+      //         </div>
+      //       </div>
 
-    //       <div className="space-y-2">
-    //         <Label>Upload Video from Device</Label>
-    //         <div className="flex flex-col gap-2">
-    //           <input
-    //             ref={fileInputRef}
-    //             type="file"
-    //             accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-msvideo"
-    //             onChange={handleVideoUpload}
-    //             className="hidden"
-    //             id="video-file-input"
-    //             disabled={uploading}
-    //           />
-    //           <Button
-    //             type="button"
-    //             variant="outline"
-    //             onClick={() => fileInputRef.current?.click()}
-    //             disabled={uploading}
-    //             className="w-full"
-    //           >
-    //             <Upload className="h-4 w-4 mr-2" />
-    //             {uploading ? 'Uploading...' : 'Choose Video File'}
-    //           </Button>
-    //           <p className="text-xs text-muted-foreground">
-    //             Supported formats: MP4, WebM, OGG, MOV, AVI (max 100MB)
-    //           </p>
-    //         </div>
-    //       </div>
+      //       <div className="space-y-2">
+      //         <Label>Upload Video from Device</Label>
+      //         <div className="flex flex-col gap-2">
+      //           <input
+      //             ref={fileInputRef}
+      //             type="file"
+      //             accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-msvideo"
+      //             onChange={handleVideoUpload}
+      //             className="hidden"
+      //             id="video-file-input"
+      //             disabled={uploading}
+      //           />
+      //           <Button
+      //             type="button"
+      //             variant="outline"
+      //             onClick={() => fileInputRef.current?.click()}
+      //             disabled={uploading}
+      //             className="w-full"
+      //           >
+      //             <Upload className="h-4 w-4 mr-2" />
+      //             {uploading ? 'Uploading...' : 'Choose Video File'}
+      //           </Button>
+      //           <p className="text-xs text-muted-foreground">
+      //             Supported formats: MP4, WebM, OGG, MOV, AVI (max 100MB)
+      //           </p>
+      //         </div>
+      //       </div>
 
-    //       <Separator />
+      //       <Separator />
 
-    //       <div className="grid grid-cols-2 gap-4">
-    //         <div className="space-y-2">
-    //           <Label>Provider</Label>
-    //           <Select
-    //             value={section.settings.provider || 'youtube'}
-    //             onValueChange={(value) => handleSettingChange('provider', value)}
-    //           >
-    //             <SelectTrigger>
-    //               <SelectValue placeholder="Select provider" />
-    //             </SelectTrigger>
-    //             <SelectContent>
-    //               <SelectItem value="youtube">YouTube</SelectItem>
-    //               <SelectItem value="vimeo">Vimeo</SelectItem>
-    //               <SelectItem value="custom">Custom / Uploaded</SelectItem>
-    //             </SelectContent>
-    //           </Select>
-    //         </div>
-    //         <div className="space-y-2">
-    //           <Label>Autoplay</Label>
-    //           <Switch
-    //             checked={section.settings.autoplay ?? false}
-    //             onCheckedChange={(checked) => handleSettingChange('autoplay', checked)}
-    //           />
-    //         </div>
-    //       </div>
-    //       <div className="grid grid-cols-2 gap-4">
-    //         <div className="space-y-2">
-    //           <Label>Controls</Label>
-    //           <Switch
-    //             checked={section.settings.controls ?? true}
-    //             onCheckedChange={(checked) => handleSettingChange('controls', checked)}
-    //           />
-    //         </div>
-    //         <div className="space-y-2">
-    //           <Label htmlFor="video-aspect">Aspect ratio</Label>
-    //           <Input
-    //             id="video-aspect"
-    //             value={section.settings.aspectRatio || '16:9'}
-    //             onChange={(e) => handleSettingChange('aspectRatio', e.target.value)}
-    //             placeholder="16:9"
-    //           />
-    //         </div>
-    //       </div>
-    //     </div>
-    //   );
-    // }
+      //       <div className="grid grid-cols-2 gap-4">
+      //         <div className="space-y-2">
+      //           <Label>Provider</Label>
+      //           <Select
+      //             value={section.settings.provider || 'youtube'}
+      //             onValueChange={(value) => handleSettingChange('provider', value)}
+      //           >
+      //             <SelectTrigger>
+      //               <SelectValue placeholder="Select provider" />
+      //             </SelectTrigger>
+      //             <SelectContent>
+      //               <SelectItem value="youtube">YouTube</SelectItem>
+      //               <SelectItem value="vimeo">Vimeo</SelectItem>
+      //               <SelectItem value="custom">Custom / Uploaded</SelectItem>
+      //             </SelectContent>
+      //           </Select>
+      //         </div>
+      //         <div className="space-y-2">
+      //           <Label>Autoplay</Label>
+      //           <Switch
+      //             checked={section.settings.autoplay ?? false}
+      //             onCheckedChange={(checked) => handleSettingChange('autoplay', checked)}
+      //           />
+      //         </div>
+      //       </div>
+      //       <div className="grid grid-cols-2 gap-4">
+      //         <div className="space-y-2">
+      //           <Label>Controls</Label>
+      //           <Switch
+      //             checked={section.settings.controls ?? true}
+      //             onCheckedChange={(checked) => handleSettingChange('controls', checked)}
+      //           />
+      //         </div>
+      //         <div className="space-y-2">
+      //           <Label htmlFor="video-aspect">Aspect ratio</Label>
+      //           <Input
+      //             id="video-aspect"
+      //             value={section.settings.aspectRatio || '16:9'}
+      //             onChange={(e) => handleSettingChange('aspectRatio', e.target.value)}
+      //             placeholder="16:9"
+      //           />
+      //         </div>
+      //       </div>
+      //     </div>
+      //   );
+      // }
 
-    case 'product-details': {
+      case 'product-details': {
         const trustBadges: Array<{ icon?: string; title?: string; text?: string }> = Array.isArray(
           section.settings.trustBadges,
         )
@@ -1369,6 +1369,24 @@ const SectionSettingsPanel: React.FC<SectionSettingsPanelProps> = ({
                 onChange={(e) => handleSettingChange('copyright', e.target.value)}
               />
             </div>
+          </div>
+        );
+
+      case 'reviews':
+        return (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="reviews-heading">Heading</Label>
+              <Input
+                id="reviews-heading"
+                value={section.settings.heading || ''}
+                onChange={(e) => handleSettingChange('heading', e.target.value)}
+                placeholder="Customer Reviews"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Reviews are associated with specific products and will be displayed automatically on product pages.
+            </p>
           </div>
         );
 

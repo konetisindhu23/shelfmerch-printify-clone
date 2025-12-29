@@ -46,7 +46,7 @@ const ImageCarousel: React.FC<{ images: Array<{ url: string; caption?: string }>
           </div>
         )}
       </div>
-      
+
       {images.length > 1 && (
         <>
           <Button
@@ -65,7 +65,7 @@ const ImageCarousel: React.FC<{ images: Array<{ url: string; caption?: string }>
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
-          
+
           {/* Dots indicator */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
             {images.map((_, index) => (
@@ -81,7 +81,7 @@ const ImageCarousel: React.FC<{ images: Array<{ url: string; caption?: string }>
           </div>
         </>
       )}
-      
+
       {currentImage.caption && (
         <p className="mt-3 text-sm text-muted-foreground text-center">{currentImage.caption}</p>
       )}
@@ -190,7 +190,7 @@ const ProductCarousel: React.FC<{
           ))}
         </div>
       </div>
-      
+
       {products.length > itemsPerView && (
         <>
           <Button
@@ -319,7 +319,7 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
             {section.settings.heading && (
               <h2 className="text-3xl font-bold mb-8">{section.settings.heading}</h2>
             )}
-            
+
             {displayProducts.length === 0 ? (
               <div className="text-center py-12 border border-dashed rounded-xl bg-muted/20">
                 <Package className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
@@ -348,8 +348,15 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
             ) : (
               // Grid layout
               <div
-                className="grid gap-6"
-                style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+                className={cn(
+                  "grid gap-6",
+                  // Mobile: 2 columns for most cases, 1 for single column
+                  columns === 1 ? "grid-cols-1" : "grid-cols-2",
+                  // Tablet/Desktop: Use configured columns
+                  columns === 2 && "md:grid-cols-2",
+                  columns === 3 && "md:grid-cols-3",
+                  columns === 4 && "md:grid-cols-4"
+                )}
               >
                 {displayProducts.map((product) => (
                   <ProductCard
@@ -380,17 +387,17 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
       const getProductsForCollection = (collection: any): Product[] => {
         if (!products || products.length === 0) return [];
         if (!collection) return [];
-        
+
         return products
           .filter((product: any) => {
             // Get category/subcategory from catalog product
-            const catalogCategoryId = product.catalogProduct?.categoryId?.toString() || 
-                                     product.categoryId;
-            const catalogSubcategoryIds = product.catalogProduct?.subcategoryIds || 
-                                         product.subcategoryIds || 
-                                         [];
+            const catalogCategoryId = product.catalogProduct?.categoryId?.toString() ||
+              product.categoryId;
+            const catalogSubcategoryIds = product.catalogProduct?.subcategoryIds ||
+              product.subcategoryIds ||
+              [];
             const catalogSubcategoryId = product.catalogProduct?.subcategoryIds?.[0]?.toString() ||
-                                       product.subcategoryId;
+              product.subcategoryId;
 
             // Normalize collection IDs to strings for comparison
             const collectionSubcategoryId = collection.subcategoryId?.toString();
@@ -403,7 +410,7 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
               }
               // Check if subcategory is in the array
               if (Array.isArray(catalogSubcategoryIds)) {
-                const normalizedCatalogSubs = catalogSubcategoryIds.map((id: any) => 
+                const normalizedCatalogSubs = catalogSubcategoryIds.map((id: any) =>
                   id?.toString() || id
                 );
                 if (normalizedCatalogSubs.includes(collectionSubcategoryId)) {
@@ -415,17 +422,17 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
                 return true;
               }
             }
-            
+
             // If subcategory not found or filterBy is 'category', try category
             if (filterBy === 'category' && collectionCategoryId) {
               return catalogCategoryId === collectionCategoryId;
             }
-            
+
             // If filtering by subcategory but not found, and category is specified, try category as fallback
             if (filterBy === 'subcategory' && !collectionSubcategoryId && collectionCategoryId) {
               return catalogCategoryId === collectionCategoryId;
             }
-            
+
             return false;
           })
           .slice(0, maxProductsPerCollection);
@@ -455,11 +462,11 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
             {section.settings.description && (
               <p className="text-muted-foreground mb-8">{section.settings.description}</p>
             )}
-            
+
             <div className="space-y-12">
               {collections.map((collection: any, collectionIndex: number) => {
                 const collectionProducts = getProductsForCollection(collection);
-                
+
                 return (
                   <div key={collectionIndex} className="space-y-6">
                     <div className="flex items-center justify-between">
@@ -470,7 +477,7 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
                         </span>
                       )}
                     </div>
-                    
+
                     {collectionProducts.length === 0 ? (
                       <div className="text-center py-8 border border-dashed rounded-xl bg-muted/20">
                         <Package className="h-10 w-10 mx-auto text-muted-foreground mb-2" />
@@ -537,8 +544,8 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
       // Normalize images to new structure
       const images: Array<{ url: string; caption?: string }> = Array.isArray(section.settings.images)
         ? section.settings.images.map((img: any) =>
-            typeof img === 'string' ? { url: img, caption: '' } : img
-          )
+          typeof img === 'string' ? { url: img, caption: '' } : img
+        )
         : [];
 
       const renderImagePlaceholder = (caption?: string) => (
@@ -880,7 +887,7 @@ const SectionRenderer: React.FC<SectionRendererProps> = ({
                 <p className="text-sm text-muted-foreground">{section.settings.subheading}</p>
               )}
             </div>
-            
+
             {displayProducts.length === 0 ? (
               <div className="text-center py-8 border border-dashed rounded-xl bg-muted/20">
                 <Package className="h-10 w-10 mx-auto text-muted-foreground mb-2" />

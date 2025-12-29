@@ -1,4 +1,4 @@
-export type SectionType = 
+export type SectionType =
   | 'header'
   | 'hero'
   | 'product-grid'
@@ -12,7 +12,8 @@ export type SectionType =
   | 'custom-html'
   | 'announcement-bar'
   | 'product-details'
-  | 'product-recommendations';
+  | 'product-recommendations'
+  | 'reviews';
 
 export interface BuilderSection {
   id: string;
@@ -93,7 +94,7 @@ export interface ComponentDefinition {
 
 export type PreviewMode = 'desktop' | 'tablet' | 'mobile';
 
-export type BuilderAction = 
+export type BuilderAction =
   | { type: 'ADD_SECTION'; section: BuilderSection; pageId: string }
   | { type: 'REMOVE_SECTION'; sectionId: string; pageId: string }
   | { type: 'UPDATE_SECTION'; sectionId: string; updates: Partial<BuilderSection>; pageId: string }

@@ -3959,19 +3959,21 @@ const ShapesPanel: React.FC<{
     const fetchShapeAssets = async () => {
       setLoadingAssets(true);
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
         const params = new URLSearchParams();
         params.append('category', 'shapes');
         params.append('limit', '20');
 
-        const response = await fetch(`${API_BASE_URL}/api/assets?${params.toString()}`);
+        const response = await fetch(`${API_BASE_URL}/assets?${params.toString()}`);
         const data = await response.json();
 
         if (data.success) {
           setShapeAssets(data.data || []);
+        } else {
+          console.error('Failed to fetch shape assets:', data.message);
         }
       } catch (error) {
         console.error('Failed to fetch shape assets:', error);
+        toast.error('Failed to load shape assets');
       } finally {
         setLoadingAssets(false);
       }
@@ -4132,20 +4134,22 @@ const GraphicsPanel: React.FC<{
     const fetchGraphics = async () => {
       setLoading(true);
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
         const params = new URLSearchParams();
         params.append('category', 'graphics');
         if (searchTerm) params.append('search', searchTerm);
         params.append('limit', '50');
 
-        const response = await fetch(`${API_BASE_URL}/api/assets?${params.toString()}`);
+        const response = await fetch(`${API_BASE_URL}/assets?${params.toString()}`);
         const data = await response.json();
 
         if (data.success) {
           setGraphics(data.data || []);
+        } else {
+          console.error('Failed to fetch graphics:', data.message);
         }
       } catch (error) {
         console.error('Failed to fetch graphics:', error);
+        toast.error('Failed to load graphics');
       } finally {
         setLoading(false);
       }
@@ -4246,20 +4250,22 @@ const LogosPanel: React.FC<{
     const fetchLogos = async () => {
       setLoading(true);
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
         const params = new URLSearchParams();
         params.append('category', 'logos');
         if (searchTerm) params.append('search', searchTerm);
         params.append('limit', '50');
 
-        const response = await fetch(`${API_BASE_URL}/api/assets?${params.toString()}`);
+        const response = await fetch(`${API_BASE_URL}/assets?${params.toString()}`);
         const data = await response.json();
 
         if (data.success) {
           setLogos(data.data || []);
+        } else {
+          console.error('Failed to fetch logos:', data.message);
         }
       } catch (error) {
         console.error('Failed to fetch logos:', error);
+        toast.error('Failed to load logos');
       } finally {
         setLoading(false);
       }
@@ -4380,20 +4386,22 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onAddAsset, selectedPlaceho
 
       setLoading(true);
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
         const params = new URLSearchParams();
         if (selectedCategory) params.append('category', selectedCategory);
         if (searchTerm) params.append('search', searchTerm);
         params.append('limit', '20');
 
-        const response = await fetch(`${API_BASE_URL}/api/assets?${params.toString()}`);
+        const response = await fetch(`${API_BASE_URL}/assets?${params.toString()}`);
         const data = await response.json();
 
         if (data.success) {
           setAssets(data.data || []);
+        } else {
+          console.error('Failed to fetch assets:', data.message);
         }
       } catch (error) {
         console.error('Failed to fetch assets:', error);
+        toast.error('Failed to load assets');
       } finally {
         setLoading(false);
       }
@@ -4405,21 +4413,20 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onAddAsset, selectedPlaceho
   useEffect(() => {
     const fetchAllAssets = async () => {
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
-        // Fetch all assets without category filter
-        const response = await fetch(`${API_BASE_URL}/api/assets`);
+        // Fetch all assets without category filter - use higher limit for "All" view
+        const response = await fetch(`${API_BASE_URL}/assets?limit=200`);
         const data = await response.json();
 
         if (data.success) {
           setAllAssets(data.data || []);
-          console.log(`Fetched ${data.data?.length || 0} total assets`);
+          console.log(`[LibraryPanel] Fetched ${data.data?.length || 0} total assets`);
         } else {
-          console.error('Failed to fetch all assets:', data.message);
+          console.error('[LibraryPanel] Failed to fetch all assets:', data.message);
           setAllAssets([]);
         }
       } catch (error) {
-        console.error('Failed to fetch all assets:', error);
+        console.error('[LibraryPanel] Failed to fetch all assets:', error);
+        // Don't show toast for initial load, only show if user explicitly selects "All"
         setAllAssets([]);
       }
     };
@@ -4556,27 +4563,29 @@ const AssetPanel: React.FC<AssetPanelProps> = ({ onAddAsset, category, title, se
     const fetchAssets = async () => {
       setLoading(true);
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
         const params = new URLSearchParams();
         params.append('category', category);
         if (searchTerm) params.append('search', searchTerm);
         params.append('limit', '50');
 
-        const response = await fetch(`${API_BASE_URL}/api/assets?${params.toString()}`);
+        const response = await fetch(`${API_BASE_URL}/assets?${params.toString()}`);
         const data = await response.json();
 
         if (data.success) {
           setAssets(data.data || []);
+        } else {
+          console.error(`Failed to fetch ${category} assets:`, data.message);
         }
       } catch (error) {
         console.error(`Failed to fetch ${category} assets:`, error);
+        toast.error(`Failed to load ${title.toLowerCase()}`);
       } finally {
         setLoading(false);
       }
     };
 
     fetchAssets();
-  }, [category, searchTerm]);
+  }, [category, searchTerm, title]);
 
   return (
     <div className="p-4 space-y-4">
@@ -4666,17 +4675,19 @@ const TemplatesPanel: React.FC = () => {
     const fetchTemplates = async () => {
       setLoading(true);
       try {
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
         const response = await fetch(
-          `${API_BASE_URL}/api/assets?category=textTemplates&limit=20`
+          `${API_BASE_URL}/assets?category=textTemplates&limit=20`
         );
         const data = await response.json();
 
         if (data.success) {
           setTemplates(data.data || []);
+        } else {
+          console.error('Failed to fetch templates:', data.message);
         }
       } catch (error) {
         console.error('Failed to fetch templates:', error);
+        toast.error('Failed to load templates');
       } finally {
         setLoading(false);
       }

@@ -42,6 +42,7 @@ const adminWalletRoutes = require('./routes/adminWallet');
 const razorpayWebhookRoutes = require('./routes/razorpayWebhook');
 const merchantWithdrawalsRoutes = require('./routes/merchantWithdrawals');
 const adminWithdrawalsRoutes = require('./routes/adminWithdrawals');
+const reviewsRoutes = require('./routes/reviews');
 
 // Initialize Express app
 const app = express();
@@ -180,6 +181,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/admin/wallet', adminWalletRoutes);
 app.use('/api/merchant', merchantWithdrawalsRoutes);
 app.use('/api/admin/withdrawals', adminWithdrawalsRoutes);
+app.use('/api/reviews', reviewsRoutes);
 
 // 404 handler
 app.use((req, res) => {

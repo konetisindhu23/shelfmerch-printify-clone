@@ -790,6 +790,99 @@ export const adminWithdrawalsApi = {
   },
 };
 
+// ============================================
+// Reviews API
+// ============================================
+export const reviewsApi = {
+  // Get reviews for a product with pagination
+  getReviews: async (productId: string, params?: { limit?: number; skip?: number; sort?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.skip) queryParams.append('skip', params.skip.toString());
+    if (params?.sort) queryParams.append('sort', params.sort);
+    const query = queryParams.toString();
+
+    return apiRequest<{
+      success: boolean;
+      data: {
+        reviews: Array<{
+          id: string;
+          customerName: string;
+          rating: number;
+          title?: string;
+          body: string;
+          images: Array<{ url: string; caption?: string }>;
+          isVerifiedPurchase: boolean;
+          helpfulCount: number;
+          createdAt: string;
+        }>;
+        stats: {
+          averageRating: number;
+          totalCount: number;
+          distribution: { 5: number; 4: number; 3: number; 2: number; 1: number };
+        };
+        pagination: {
+          total: number;
+          limit: number;
+          skip: number;
+          hasMore: boolean;
+        };
+      };
+    }>(`/reviews/${encodeURIComponent(productId)}${query ? `?${query}` : ''}`);
+  },
+
+  // Get review stats only (lightweight)
+  getStats: async (productId: string) => {
+    return apiRequest<{
+      success: boolean;
+      data: {
+        averageRating: number;
+        totalCount: number;
+        distribution: { 5: number; 4: number; 3: number; 2: number; 1: number };
+      };
+    }>(`/reviews/${encodeURIComponent(productId)}/stats`);
+  },
+
+  // Submit a new review
+  create: async (productId: string, data: {
+    customerName: string;
+    customerEmail?: string;
+    rating: number;
+    title?: string;
+    body: string;
+    images?: Array<{ url: string; caption?: string }>;
+  }) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      data: {
+        id: string;
+        customerName: string;
+        rating: number;
+        title?: string;
+        body: string;
+        images: Array<{ url: string; caption?: string }>;
+        isVerifiedPurchase: boolean;
+        createdAt: string;
+      };
+    }>(`/reviews/${encodeURIComponent(productId)}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Mark a review as helpful
+  markHelpful: async (reviewId: string, voterId: string) => {
+    return apiRequest<{
+      success: boolean;
+      data: { helpfulCount: number };
+    }>(`/reviews/${encodeURIComponent(reviewId)}/helpful`, {
+      method: 'POST',
+      body: JSON.stringify({ voterId }),
+    });
+  },
+};
+
 // Get refresh token from localStorage
 const getRefreshToken = (): string | null => {
   return localStorage.getItem('refreshToken');

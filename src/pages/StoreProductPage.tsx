@@ -241,7 +241,14 @@ const StoreProductPage = () => {
             (Array.isArray(sp.previewImagesUrl) && sp.previewImagesUrl[0]?.url) ||
             undefined;
 
-          const variantDocs: any[] = Array.isArray(sp.variants) ? sp.variants : [];
+          // Prefer embedded variantsSummary from StoreProduct (storeproducts collection)
+          // and fall back to populated StoreProductVariant docs if needed.
+          const summaryDocs: any[] = Array.isArray(sp.variantsSummary) ? sp.variantsSummary : [];
+          const variantDocs: any[] = summaryDocs.length
+            ? summaryDocs
+            : Array.isArray(sp.variants)
+              ? sp.variants
+              : [];
           const colorSet = new Set<string>();
           const sizeSet = new Set<string>();
           const priceMap: Record<string, Record<string, number>> = {};
@@ -249,12 +256,30 @@ const StoreProductPage = () => {
 
           variantDocs.forEach((v) => {
             const cv = v.catalogProductVariantId || {};
-            const color = typeof cv.color === 'string' ? cv.color : undefined;
-            const size = typeof cv.size === 'string' ? cv.size : undefined;
+
+            // Support both shapes:
+            // - variantsSummary: { size, color, colorHex, sellingPrice, basePrice, ... }
+            // - populated StoreProductVariant: { catalogProductVariantId: { size, color, colorHex, ... }, sellingPrice }
+            const color = typeof v.color === 'string'
+              ? v.color
+              : typeof cv.color === 'string'
+                ? cv.color
+                : undefined;
+            const size = typeof v.size === 'string'
+              ? v.size
+              : typeof cv.size === 'string'
+                ? cv.size
+                : undefined;
             if (!color || !size) return;
 
-            if (cv.colorHex && typeof cv.colorHex === 'string') {
-              hexMap[color] = cv.colorHex;
+            const colorHex = typeof v.colorHex === 'string'
+              ? v.colorHex
+              : typeof cv.colorHex === 'string'
+                ? cv.colorHex
+                : undefined;
+
+            if (colorHex) {
+              hexMap[color] = colorHex;
             }
 
             const variantPrice: number =

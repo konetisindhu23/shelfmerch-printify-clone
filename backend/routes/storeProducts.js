@@ -90,10 +90,39 @@ router.post('/', protect, authorize('merchant', 'superadmin'), async (req, res) 
             ...(v.isActive !== undefined ? { isActive: v.isActive } : {}),
           },
         };
-        return await StoreProductVariant.findOneAndUpdate(vpFilter, vpUpdate, { new: true, upsert: true, setDefaultsOnInsert: true });
+        return await StoreProductVariant.findOneAndUpdate(
+          vpFilter,
+          vpUpdate,
+          { new: true, upsert: true, setDefaultsOnInsert: true },
+        );
       }));
       createdVariants = createdVariants.filter(Boolean);
     }
+
+    // Rebuild embedded variantsSummary on the StoreProduct so that
+    // storefronts and dashboards can quickly read per-variant pricing.
+    const allVariants = await StoreProductVariant.find({
+      storeProductId: storeProduct._id,
+      isActive: true,
+    }).populate({
+      path: 'catalogProductVariantId',
+      select: 'size color colorHex basePrice skuTemplate',
+    });
+
+    storeProduct.variantsSummary = allVariants.map((v) => {
+      const cv = v.catalogProductVariantId || {};
+      return {
+        catalogProductVariantId: cv._id || v.catalogProductVariantId,
+        size: cv.size,
+        color: cv.color,
+        colorHex: cv.colorHex,
+        sku: v.sku || cv.skuTemplate,
+        sellingPrice: typeof v.sellingPrice === 'number' ? v.sellingPrice : undefined,
+        basePrice: typeof cv.basePrice === 'number' ? cv.basePrice : undefined,
+      };
+    });
+
+    await storeProduct.save();
 
     return res.status(201).json({
       success: true,
@@ -368,8 +397,71 @@ router.patch('/:id', protect, authorize('merchant', 'superadmin'), async (req, r
       sp.markModified('designData');
     }
 
+    // Persist basic StoreProduct field changes before working with variants
     await sp.save();
-    return res.json({ success: true, data: sp });
+
+    let updatedVariants = [];
+    if (Array.isArray(updates.variants) && updates.variants.length > 0) {
+      // Upsert each variant for this store product (same logic as POST route)
+      updatedVariants = await Promise.all(
+        updates.variants.map(async (v) => {
+          if (!v.catalogProductVariantId || !v.sku) return null;
+
+          const vpFilter = {
+            storeProductId: sp._id,
+            catalogProductVariantId: v.catalogProductVariantId,
+          };
+
+          const vpUpdate = {
+            $set: {
+              storeProductId: sp._id,
+              catalogProductVariantId: v.catalogProductVariantId,
+              sku: v.sku,
+              ...(v.sellingPrice !== undefined ? { sellingPrice: v.sellingPrice } : {}),
+              ...(v.isActive !== undefined ? { isActive: v.isActive } : {}),
+            },
+          };
+
+          return await StoreProductVariant.findOneAndUpdate(
+            vpFilter,
+            vpUpdate,
+            { new: true, upsert: true, setDefaultsOnInsert: true },
+          );
+        })
+      );
+
+      updatedVariants = updatedVariants.filter(Boolean);
+    }
+
+    // Rebuild embedded variantsSummary from active StoreProductVariant docs
+    const allVariants = await StoreProductVariant.find({
+      storeProductId: sp._id,
+      isActive: true,
+    }).populate({
+      path: 'catalogProductVariantId',
+      select: 'size color colorHex basePrice skuTemplate',
+    });
+
+    sp.variantsSummary = allVariants.map((v) => {
+      const cv = v.catalogProductVariantId || {};
+      return {
+        catalogProductVariantId: cv._id || v.catalogProductVariantId,
+        size: cv.size,
+        color: cv.color,
+        colorHex: cv.colorHex,
+        sku: v.sku || cv.skuTemplate,
+        sellingPrice: typeof v.sellingPrice === 'number' ? v.sellingPrice : undefined,
+        basePrice: typeof cv.basePrice === 'number' ? cv.basePrice : undefined,
+      };
+    });
+
+    await sp.save();
+
+    return res.json({
+      success: true,
+      data: sp,
+      variants: updatedVariants,
+    });
   } catch (error) {
     console.error('Error updating store product:', error);
     return res.status(500).json({ success: false, message: 'Failed to update store product' });

@@ -32,6 +32,39 @@ const StoreProductSchema = new mongoose.Schema({
     type: Number,
     min: 0
   },
+  // Optional: summary of variant-level pricing embedded on the StoreProduct
+  // This mirrors data from StoreProductVariant + CatalogProductVariant so that
+  // storefronts and dashboards can quickly read per-variant size/color/pricing
+  // without needing an additional query.
+  variantsSummary: [{
+    catalogProductVariantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CatalogProductVariant',
+      required: true,
+    },
+    size: {
+      type: String,
+    },
+    color: {
+      type: String,
+    },
+    colorHex: {
+      type: String,
+    },
+    sku: {
+      type: String,
+    },
+    // Variant-level selling price for this store product
+    sellingPrice: {
+      type: Number,
+      min: 0,
+    },
+    // Production cost for this variant (CatalogProductVariant.basePrice)
+    basePrice: {
+      type: Number,
+      min: 0,
+    },
+  }],
   // Store-specific gallery images (optional, falls back to catalog)
   galleryImages: [{
     id: { type: String, required: true },

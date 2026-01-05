@@ -339,7 +339,8 @@ const StoreProductsPage: React.FC = () => {
 
   const handleProductClick = (product: Product) => {
     if (!store) return;
-    navigate(`/store/${store.subdomain}/product/${product.id}`);
+    const path = buildStorePath(`/product/${product.id}`, store.subdomain);
+    navigate(path);
   };
 
   const handleAddToCart = (product: Product) => {

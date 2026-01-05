@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { getTenantSlugFromLocation } from '@/utils/tenantUtils';
+import { getTenantSlugFromLocation, buildStorePath } from '@/utils/tenantUtils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -568,12 +568,14 @@ const StoreProductPage = () => {
   const handleCheckout = () => {
     if (!store) return;
     if (!isAuthenticated) {
-      navigate(`/store/${store.subdomain}/auth?redirect=checkout`, {
+      const authPath = buildStorePath('/auth?redirect=checkout', store.subdomain);
+      navigate(authPath, {
         state: { cart, storeId: store.id, subdomain: store.subdomain },
       });
       return;
     }
-    navigate(`/store/${store.subdomain}/checkout`, {
+    const checkoutPath = buildStorePath('/checkout', store.subdomain);
+    navigate(checkoutPath, {
       state: { cart, storeId: store.id, subdomain: store.subdomain },
     });
   };

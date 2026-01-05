@@ -44,6 +44,7 @@ const merchantWithdrawalsRoutes = require('./routes/merchantWithdrawals');
 const adminWithdrawalsRoutes = require('./routes/adminWithdrawals');
 const reviewsRoutes = require('./routes/reviews');
 const { tenantResolver } = require('./middleware/tenantResolver');
+const storeRedirect = require('./middleware/storeRedirect');
 
 // Initialize Express app
 const app = express();
@@ -186,6 +187,10 @@ app.get('/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development'
   });
 });
+
+// Store redirect middleware (redirects /store/:slug/* to subdomain in production)
+// Must be before API routes but after health check
+app.use(storeRedirect);
 
 // API Routes
 // Store-scoped routes that need tenant resolution

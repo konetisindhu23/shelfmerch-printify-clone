@@ -140,3 +140,72 @@ export function getApiBaseUrl(): string {
   return '/api';
 }
 
+/**
+ * Get base path for store routes
+ * Returns empty string for subdomain-based routing, or /store/:slug for path-based
+ * 
+ * @param tenantSlug - The tenant/store slug (optional, will be detected if not provided)
+ * @returns Base path string (empty for subdomain, /store/:slug for path-based)
+ */
+export function tenantBasePath(tenantSlug?: string | null): string {
+  const slug = tenantSlug || getTenantSlugFromLocation();
+  
+  // If we're on a subdomain (production), return empty string (routes are relative)
+  if (slug && isTenantSubdomain()) {
+    return '';
+  }
+  
+  // If we have a slug but not on subdomain (dev/fallback), return /store/:slug
+  if (slug) {
+    return `/store/${slug}`;
+  }
+  
+  // No tenant, return empty (main site)
+  return '';
+}
+
+/**
+ * Build a store-scoped path
+ * Automatically uses subdomain or path-based routing based on current context
+ * 
+ * @param path - The path relative to store (e.g., '/products', '/product/123')
+ * @param tenantSlug - Optional tenant slug (will be detected if not provided)
+ * @returns Full path (e.g., '/products' or '/store/merch/products')
+ * 
+ * Examples:
+ * - On merch.shelfmerch.in: buildStorePath('/products') -> '/products'
+ * - On localhost/store/merch: buildStorePath('/products') -> '/store/merch/products'
+ * - On shelfmerch.in: buildStorePath('/products', 'merch') -> '/store/merch/products'
+ */
+export function buildStorePath(path: string, tenantSlug?: string | null): string {
+  const basePath = tenantBasePath(tenantSlug);
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${basePath}${cleanPath}`;
+}
+
+/**
+ * Build store URL (absolute URL)
+ * Useful for external links or sharing
+ * 
+ * @param path - The path relative to store
+ * @param tenantSlug - Tenant slug
+ * @returns Full URL
+ */
+export function buildStoreUrl(path: string, tenantSlug: string): string {
+  if (!tenantSlug) return path;
+  
+  const BASE_DOMAIN = import.meta.env.VITE_BASE_DOMAIN || 'shelfmerch.in';
+  const isDev = import.meta.env.DEV;
+  const protocol = isDev ? 'http' : 'https';
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  
+  // In production, use subdomain
+  if (!isDev) {
+    return `${protocol}://${tenantSlug}.${BASE_DOMAIN}${cleanPath}`;
+  }
+  
+  // In dev, use path-based
+  const port = window.location.port ? `:${window.location.port}` : '';
+  return `${protocol}://${window.location.hostname}${port}/store/${tenantSlug}${cleanPath}`;
+}
+

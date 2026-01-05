@@ -41,6 +41,7 @@ import NotFound from "./pages/NotFound";
 import ProductCreation from "./pages/ProductCreation";
 import ListingEditor from "./pages/ListingEditor";
 import StoreAuthPage from "./pages/StoreAuthPage";
+import StoreRoutes from "./components/StoreRoutes";
 import MockupsLibrary from "./pages/MockupsLibrary";
 import PopupStores from "./pages/PopupStores";
 import MerchantInvoices from "./pages/MerchantInvoices";
@@ -293,16 +294,8 @@ const App = () => (
                     </ProtectedRoute>
                   }
                 />
-                <Route path="/store/:subdomain" element={<StoreAuthProvider><StoreFrontendNew /></StoreAuthProvider>} />
-                <Route path="/store/:subdomain/products" element={<StoreAuthProvider><StoreProductsPage /></StoreAuthProvider>} />
-                <Route path="/store/:subdomain/auth" element={<StoreAuthProvider><StoreAuthPage /></StoreAuthProvider>} />
-                <Route path="/store/:subdomain/account" element={<StoreAuthProvider><StoreCustomerAccountPage /></StoreAuthProvider>} />
-                <Route path="/store/:subdomain/product/:productId" element={
-                  <StoreAuthProvider>
-                    <StoreProductPage />
-                  </StoreAuthProvider>
-                } />
-                <Route path="/store/:subdomain/checkout" element={<StoreAuthProvider><StoreCheckoutPage /></StoreAuthProvider>} />
+                {/* Store routes - handles both subdomain and path-based routing */}
+                <Route path="/*" element={<StoreRoutes />} />
                 <Route path="/order-confirmation" element={<OrderConfirmation />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>

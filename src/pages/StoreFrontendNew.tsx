@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Product, Store, CartItem } from '@/types';
 import { storeApi, storeProductsApi } from '@/lib/api';
@@ -7,6 +7,7 @@ import { getTheme } from '@/lib/themes';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStoreAuth } from '@/contexts/StoreAuthContext';
+import { getTenantSlugFromLocation, buildStorePath } from '@/utils/tenantUtils';
 import CartDrawer from '@/components/storefront/CartDrawer';
 import SectionRenderer from '@/components/builder/SectionRenderer';
 import EnhancedStoreHeader from '@/components/storefront/EnhancedStoreHeader';
@@ -18,8 +19,12 @@ import EnhancedFooter from '@/components/storefront/EnhancedFooter';
 
 const StoreFrontendNew = () => {
   const { user, isMerchant, isAdmin } = useAuth();
-  const { subdomain } = useParams<{ subdomain: string }>();
+  const params = useParams<{ subdomain: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
+  
+  // Get tenant slug from subdomain (hostname) or path parameter (fallback)
+  const subdomain = getTenantSlugFromLocation(location, params) || params.subdomain;
   const [store, setStore] = useState<Store | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -41,6 +46,7 @@ const StoreFrontendNew = () => {
       }
       try {
         setSpLoading(true);
+        // Use store.id if available, otherwise backend will extract from subdomain
         const resp = await storeProductsApi.listPublic(store.id);
         if (resp.success) {
           const forStore = resp.data || [];
@@ -260,12 +266,14 @@ const StoreFrontendNew = () => {
     if (!store) return;
 
     if (!isAuthenticated) {
-      navigate(`/store/${store.subdomain}/auth?redirect=checkout`, { state: { cart } });
+      const authPath = buildStorePath('/auth?redirect=checkout', store.subdomain);
+      navigate(authPath, { state: { cart } });
       return;
     }
 
     setCartOpen(false);
-    navigate(`/store/${store.subdomain}/checkout`, {
+    const checkoutPath = buildStorePath('/checkout', store.subdomain);
+    navigate(checkoutPath, {
       state: { cart, storeId: store.id, subdomain: store.subdomain },
     });
   };
@@ -307,7 +315,7 @@ const StoreFrontendNew = () => {
         <EnhancedStoreHeader
           storeName={store.storeName}
           navLinks={[
-            { name: 'Products', href: `/store/${store.subdomain}/products` },
+            { name: 'Products', href: buildStorePath('/products', store.subdomain) },
             { name: 'About', href: '#about' },
             { name: 'Contact', href: '#contact' },
           ]}
@@ -353,7 +361,7 @@ const StoreFrontendNew = () => {
               handleProductClick(product);
             }}
             showViewAllButton={products.length > 8}
-            viewAllLink={`/store/${store.subdomain}/products`}
+            viewAllLink={buildStorePath('/products', store.subdomain)}
             title="Featured Products"
             subtitle="Featured Collection"
           />

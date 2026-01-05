@@ -2,79 +2,97 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 0 0% 10%;
+    --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 10%;
+    --card-foreground: 222 47% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 10%;
+    --popover-foreground: 222 47% 11%;
 
-    --primary: 159 58% 40%;
+    --primary: 142 71% 45%;
     --primary-foreground: 0 0% 100%;
-    
-    --primary-hover: 159 58% 35%;
-    
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 10%;
 
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 45%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
 
-    --accent: 159 58% 95%;
-    --accent-foreground: 159 58% 40%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 90%;
-    --input: 0 0% 90%;
-    --ring: 159 58% 40%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 142 71% 45%;
 
     --radius: 0.5rem;
-    
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
-    --shadow-elevated: 0 4px 20px rgba(0, 0, 0, 0.1);
+
+    /* Custom Shelf Merch Colors */
+    --brand-green: 142 71% 45%;
+    --brand-green-hover: 142 71% 38%;
+    --brand-dark: 222 47% 11%;
+    --brand-gray: 215 16% 47%;
+    --brand-light-gray: 210 40% 96%;
+    --footer-bg: 220 26% 14%;
+    --footer-foreground: 210 40% 96%;
+    --hero-gradient-start: 220 26% 14%;
+    --hero-gradient-end: 220 26% 20%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5% 26%;
+    --sidebar-primary: 240 6% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 5% 96%;
+    --sidebar-accent-foreground: 240 6% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217 91% 60%;
   }
 
   .dark {
-    --background: 0 0% 5%;
-    --foreground: 0 0% 95%;
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
 
-    --card: 0 0% 8%;
-    --card-foreground: 0 0% 95%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
 
-    --popover: 0 0% 8%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
 
-    --primary: 159 58% 45%;
+    --primary: 142 71% 45%;
     --primary-foreground: 0 0% 100%;
-    
-    --primary-hover: 159 58% 50%;
 
-    --secondary: 0 0% 15%;
-    --secondary-foreground: 0 0% 95%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
 
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
 
-    --accent: 0 0% 15%;
-    --accent-foreground: 159 58% 45%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
 
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 159 58% 45%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 212 27% 84%;
+    --sidebar-background: 240 6% 10%;
+    --sidebar-foreground: 240 5% 96%;
+    --sidebar-primary: 224 76% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 4% 16%;
+    --sidebar-accent-foreground: 240 5% 96%;
+    --sidebar-border: 240 4% 16%;
+    --sidebar-ring: 217 91% 60%;
   }
 }
 
@@ -83,97 +101,56 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 }
 
 @layer components {
-  /* Storefront Button Styles */
-  .btn-primary-store {
-    @apply px-8 py-4 rounded-full bg-primary text-primary-foreground font-medium flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg hover:shadow-xl;
+  .container-custom {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
   }
 
-  .btn-outline-store {
-    @apply px-8 py-4 rounded-full border-2 border-foreground text-foreground font-medium flex items-center justify-center gap-2 hover:bg-foreground hover:text-background transition-colors;
+  .section-padding {
+    @apply py-16 lg:py-24;
   }
 
-  /* Section Heading */
-  .section-heading {
-    @apply text-3xl md:text-4xl lg:text-5xl font-semibold tracking-tight;
+  .section-title {
+    @apply text-3xl md:text-4xl font-bold text-foreground leading-tight;
   }
 
-  /* Hero Gradient */
-  .hero-gradient {
-    @apply bg-gradient-to-br from-muted/30 via-background to-accent/20;
+  .section-subtitle {
+    @apply text-lg text-muted-foreground leading-relaxed;
   }
 
-  /* Font Display */
-  .font-display {
-    font-family: var(--font-display, ui-serif, Georgia, Cambria, "Times New Roman", Times, serif);
+  .hero-title {
+    @apply text-4xl md:text-5xl lg:text-6xl font-bold text-foreground leading-tight;
   }
 
-  /* Animations */
-  @keyframes float {
-    0%, 100% {
-      transform: translateY(0px);
-    }
-    50% {
-      transform: translateY(-20px);
-    }
+  .hero-description {
+    @apply text-lg md:text-xl text-muted-foreground leading-relaxed max-w-xl;
   }
 
-  .animate-float {
-    animation: float 6s ease-in-out infinite;
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
   }
 
-  .animate-fade-up {
-    animation: fade-up 0.6s ease-out forwards;
-    opacity: 0;
+  .gradient-hero {
+    background: linear-gradient(135deg, hsl(var(--hero-gradient-start)) 0%, hsl(var(--hero-gradient-end)) 100%);
   }
 
-  .animate-delay-100 {
-    animation-delay: 0.1s;
-  }
-
-  .animate-delay-200 {
-    animation-delay: 0.2s;
-  }
-
-  .animate-delay-300 {
-    animation-delay: 0.3s;
-  }
-
-  @keyframes fade-up {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .animate-fade-in {
-    animation: fade-in 0.3s ease-out;
-  }
-
-  @keyframes fade-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  /* Product Card Styles */
-  .product-card {
-    @apply transition-all duration-300;
-  }
-
-  .product-image-wrapper {
-    @apply relative overflow-hidden;
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(142 71% 38%) 100%);
   }
 }

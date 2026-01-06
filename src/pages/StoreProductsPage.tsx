@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { getTenantSlugFromLocation } from '@/utils/tenantUtils';
+import { getTenantSlugFromLocation, buildStorePath } from '@/utils/tenantUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Product, Store, CartItem } from '@/types';
@@ -381,12 +381,14 @@ const StoreProductsPage: React.FC = () => {
     if (!store) return;
 
     if (!isAuthenticated) {
-      navigate(`/store/${store.subdomain}/auth?redirect=checkout`, { state: { cart } });
+      const authPath = buildStorePath('/auth?redirect=checkout', store.subdomain);
+      navigate(authPath, { state: { cart } });
       return;
     }
 
     setCartOpen(false);
-    navigate(`/store/${store.subdomain}/checkout`, {
+    const checkoutPath = buildStorePath('/checkout', store.subdomain);
+    navigate(checkoutPath, {
       state: { cart, storeId: store.id, subdomain: store.subdomain },
     });
   };

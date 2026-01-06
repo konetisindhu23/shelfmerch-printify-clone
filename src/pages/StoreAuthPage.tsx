@@ -9,12 +9,17 @@ import { useStoreAuth } from '@/contexts/StoreAuthContext';
 import { storeApi } from '@/lib/api';
 import { Store } from '@/types';
 import { getTheme } from '@/lib/themes';
+import { getTenantSlugFromLocation, buildStorePath } from '@/utils/tenantUtils';
 
 const StoreAuthPage = () => {
-    const { subdomain } = useParams<{ subdomain: string }>();
+    const params = useParams<{ subdomain: string }>();
+    const location = useLocation();
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const { login, register, isAuthenticated } = useStoreAuth();
+    
+    // Get tenant slug from subdomain (hostname) or path parameter (fallback)
+    const subdomain = getTenantSlugFromLocation(location, params) || params.subdomain;
 
     const [store, setStore] = useState<Store | null>(null);
     const [loading, setLoading] = useState(true);
@@ -30,14 +35,17 @@ const StoreAuthPage = () => {
 
     useEffect(() => {
         const loadStore = async () => {
-            if (!subdomain) return;
             try {
-                const response = await storeApi.getBySubdomain(subdomain);
+                // If subdomain is detected, use it; otherwise let backend extract from Host header
+                const response = await storeApi.getBySubdomain(subdomain || undefined);
                 if (response.success && response.data) {
                     setStore(response.data);
+                } else {
+                    setStore(null);
                 }
             } catch (error) {
                 console.error('Failed to load store:', error);
+                setStore(null);
             } finally {
                 setLoading(false);
             }
@@ -45,12 +53,11 @@ const StoreAuthPage = () => {
         loadStore();
     }, [subdomain]);
 
-    const location = useLocation();
-
     useEffect(() => {
         if (isAuthenticated && store) {
             // Forward any state (like cart) that was passed to the auth page
-            navigate(`/store/${store.subdomain}/${redirectPath}`, { state: location.state });
+            const redirectUrl = buildStorePath(`/${redirectPath}`, store.subdomain);
+            navigate(redirectUrl, { state: location.state });
         }
     }, [isAuthenticated, store, navigate, redirectPath, location.state]);
 
@@ -200,7 +207,10 @@ const StoreAuthPage = () => {
                 </Card>
 
                 <div className="text-center text-sm text-muted-foreground">
-                    <Button variant="link" onClick={() => navigate(`/store/${subdomain}`)}>
+                    <Button variant="link" onClick={() => {
+                        const homePath = buildStorePath('/', store.subdomain);
+                        navigate(homePath);
+                    }}>
                         Return to Store
                     </Button>
                 </div>

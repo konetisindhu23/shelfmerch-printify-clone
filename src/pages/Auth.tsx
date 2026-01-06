@@ -1,20 +1,40 @@
-import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { login, signup } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   const from = (location.state as any)?.from?.pathname || '/dashboard';
+
+  // Check for verification status in URL params
+  useEffect(() => {
+    const verified = searchParams.get('verified');
+    const error = searchParams.get('error');
+
+    if (verified === 'true') {
+      toast.success('Email verified successfully! You can now log in.');
+    } else if (error) {
+      if (error === 'invalid_token') {
+        toast.error('Invalid verification token');
+      } else if (error === 'invalid_or_expired_token') {
+        toast.error('Verification token is invalid or has expired. Please request a new one.');
+      } else if (error === 'verification_failed') {
+        toast.error('Email verification failed. Please try again.');
+      }
+    }
+  }, [searchParams]);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -28,8 +48,12 @@ const Auth = () => {
       await login(email, password);
       toast.success('Welcome back!');
       navigate(from, { replace: true });
-    } catch (error) {
-      toast.error('Invalid credentials');
+    } catch (error: any) {
+      if (error?.response?.data?.requiresVerification) {
+        toast.error('Please verify your email address before logging in. Check your inbox for the verification email.');
+      } else {
+        toast.error(error?.response?.data?.message || 'Invalid credentials');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -46,10 +70,10 @@ const Auth = () => {
 
     try {
       await signup(email, password, name);
-      toast.success('Account created successfully!');
-      navigate('/dashboard', { replace: true });
-    } catch (error) {
-      toast.error('Failed to create account');
+      toast.success('Account created! Please check your email to verify your account.');
+      // Don't navigate - show message to check email
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to create account');
     } finally {
       setIsLoading(false);
     }
@@ -66,6 +90,26 @@ const Auth = () => {
         </div>
 
         <div className="bg-card rounded-lg shadow-card p-6">
+          {/* Verification status messages */}
+          {searchParams.get('verified') === 'true' && (
+            <Alert className="mb-4 border-green-500 bg-green-50">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-800">
+                Email verified successfully! You can now log in.
+              </AlertDescription>
+            </Alert>
+          )}
+          {searchParams.get('error') && searchParams.get('error') !== 'invalid_credentials' && (
+            <Alert className="mb-4 border-red-500 bg-red-50">
+              <AlertCircle className="h-4 w-4 text-red-600" />
+              <AlertDescription className="text-red-800">
+                {searchParams.get('error') === 'invalid_or_expired_token' 
+                  ? 'Verification token is invalid or has expired. Please request a new one.'
+                  : 'Email verification failed. Please try again.'}
+              </AlertDescription>
+            </Alert>
+          )}
+
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="login">Log in</TabsTrigger>
@@ -104,9 +148,7 @@ const Auth = () => {
                     'Log in'
                   )}
                 </Button>
-                <p className="text-xs text-center text-muted-foreground mt-4">
-                  Demo admin: admin@shelfmerch.com / admin123
-                </p>
+               
               </form>
             </TabsContent>
 

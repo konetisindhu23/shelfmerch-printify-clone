@@ -16,6 +16,7 @@ import CategorySubcategories from "./pages/Apparel";
 import ProductDetail from "./pages/ProductDetail";
 import DesignerEditor from "./pages/DesignEditor";
 import Auth from "./pages/Auth";
+import VerifyEmail from "./pages/VerifyEmail";
 import Dashboard from "./pages/Dashboard";
 import Orders from "./pages/Orders";
 import Stores from "./pages/Stores";
@@ -42,6 +43,7 @@ import ProductCreation from "./pages/ProductCreation";
 import ListingEditor from "./pages/ListingEditor";
 import StoreAuthPage from "./pages/StoreAuthPage";
 import StoreRoutes from "./components/StoreRoutes";
+import { isTenantSubdomain } from "./utils/tenantUtils";
 import MockupsLibrary from "./pages/MockupsLibrary";
 import PopupStores from "./pages/PopupStores";
 import MerchantInvoices from "./pages/MerchantInvoices";
@@ -50,6 +52,15 @@ import WalletTopUp from "./pages/WalletTopUp";
 import WalletTransactions from "./pages/WalletTransactions";
 import MerchantWallet from "./pages/MerchantWallet";
 import AdminWithdrawals from "./pages/AdminWithdrawals";
+
+// Root route component that conditionally renders Index or StoreRoutes
+// On subdomains, StoreRoutes handles all routing including root path
+const RootRoute = () => {
+  if (isTenantSubdomain()) {
+    return <StoreRoutes />;
+  }
+  return <Index />;
+};
 
 const queryClient = new QueryClient();
 
@@ -63,13 +74,20 @@ const App = () => (
           <StoreProvider>
             <DataProvider>
               <Routes>
-                <Route path="/" element={<Index />} />
-                <Route path="/products" element={<Products />} />
-                <Route path="/categories" element={<AllCategories />} />
-                <Route path="/category-subcategories/:categoryId" element={<CategorySubcategories />} />
-                <Route path="/products/category/:slug" element={<CategoryProducts />} />
-                <Route path="/products/:id" element={<ProductDetail />} />
-                <Route path="/auth" element={<Auth />} />
+                {/* Root route: Conditionally shows Index or StoreRoutes based on subdomain */}
+                <Route path="/" element={<RootRoute />} />
+                {/* Main site routes - only render when NOT on a tenant subdomain */}
+                {!isTenantSubdomain() && (
+                  <>
+                    <Route path="/products" element={<Products />} />
+                    <Route path="/categories" element={<AllCategories />} />
+                    <Route path="/category-subcategories/:categoryId" element={<CategorySubcategories />} />
+                    <Route path="/products/category/:slug" element={<CategoryProducts />} />
+                    <Route path="/products/:id" element={<ProductDetail />} />
+                    <Route path="/auth" element={<Auth />} />
+                    <Route path="/verify-email" element={<VerifyEmail />} />
+                  </>
+                )}
                 <Route
                   path="/designer/:id"
                   element={
@@ -294,7 +312,7 @@ const App = () => (
                     </ProtectedRoute>
                   }
                 />
-                {/* Store routes - handles both subdomain and path-based routing */}
+                {/* Store routes - handles path-based routing (subdomain routing also handled here for non-root paths) */}
                 <Route path="/*" element={<StoreRoutes />} />
                 <Route path="/order-confirmation" element={<OrderConfirmation />} />
                 <Route path="*" element={<NotFound />} />

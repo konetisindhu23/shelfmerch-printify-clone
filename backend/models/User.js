@@ -21,9 +21,20 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'Please provide a password'],
+    required: function() {
+      // Password is required only if user is not using OAuth
+      return !this.googleId;
+    },
     minlength: [6, 'Password must be at least 6 characters'],
     select: false // Don't return password by default
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true // Allow multiple null values
+  },
+  avatar: {
+    type: String
   },
   role: {
     type: String,
@@ -48,6 +59,10 @@ const userSchema = new mongoose.Schema({
   },
   emailVerificationToken: {
     type: String,
+    select: false
+  },
+  verificationTokenExpiry: {
+    type: Date,
     select: false
   },
   passwordResetToken: {
@@ -90,9 +105,9 @@ userSchema.add({
   }
 });
 
-// Hash password before saving
+// Hash password before saving (only if password is provided and modified)
 userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) {
+  if (!this.isModified('password') || !this.password) {
     return next();
   }
   

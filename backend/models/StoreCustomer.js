@@ -24,6 +24,13 @@ const StoreCustomerSchema = new mongoose.Schema(
     passwordHash: {
       type: String,
     },
+    googleId: {
+      type: String,
+      sparse: true, // Allow multiple null values
+    },
+    avatar: {
+      type: String,
+    },
     lastSeenAt: {
       type: Date,
     },

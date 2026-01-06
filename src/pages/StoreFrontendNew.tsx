@@ -250,7 +250,8 @@ const StoreFrontendNew = () => {
 
   const handleProductClick = (product: Product) => {
     if (!store) return;
-    navigate(`/store/${store.subdomain}/product/${product.id}`);
+    const productPath = buildStorePath(`/product/${product.id}`, store.subdomain);
+    navigate(productPath);
   };
 
   const { isAuthenticated, checkAuth } = useStoreAuth();

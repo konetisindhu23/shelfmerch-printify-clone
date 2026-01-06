@@ -1,8 +1,10 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const crypto = require('crypto');
 const User = require('../models/User');
 const { sendTokenResponse, generateToken, generateRefreshToken } = require('../utils/generateToken');
 const { protect, authorize } = require('../middleware/auth');
+const { sendVerificationEmail } = require('../utils/mailer');
 const rateLimit = require('express-rate-limit');
 
 const router = express.Router();
@@ -148,30 +150,44 @@ router.post(
       const validRoles = ['superadmin', 'merchant', 'staff'];
       const userRole = role && validRoles.includes(role) ? role : 'merchant';
       
+      // Generate verification token
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
       // Create user
       console.log('Creating user with:', { name, email, role: userRole });
       const user = await User.create({
         name,
         email,
         password,
-        role: userRole
+        role: userRole,
+        isEmailVerified: false,
+        emailVerificationToken: verificationToken,
+        verificationTokenExpiry: verificationTokenExpiry
       });
       console.log('User created successfully:', user._id);
 
+      // Send verification email
       try {
-        await sendTokenResponse(user, 201, res);
-        console.log('Token response sent successfully');
-      } catch (tokenError) {
-        console.error('Error in sendTokenResponse:', tokenError);
-        console.error('Token error stack:', tokenError.stack);
-        // If token generation fails, delete the user and return error
-        await User.findByIdAndDelete(user._id);
-        return res.status(400).json({
-          success: false,
-          message: 'Failed to generate authentication tokens',
-          errors: [{ msg: tokenError.message || 'Token generation failed', param: 'token' }]
-        });
+        await sendVerificationEmail(email, verificationToken, name);
+        console.log('Verification email sent successfully');
+      } catch (emailError) {
+        console.error('Error sending verification email:', emailError);
+        // Don't fail registration if email fails, but log it
       }
+
+      // Return success response without token (user needs to verify first)
+      res.status(201).json({
+        success: true,
+        message: 'Registration successful. Please check your email to verify your account.',
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isEmailVerified: false
+        }
+      });
     } catch (error) {
       console.error('Register error:', error);
       console.error('Error stack:', error.stack);
@@ -252,6 +268,15 @@ router.post(
         });
       }
 
+      // Check if email is verified
+      if (!user.isEmailVerified) {
+        return res.status(403).json({
+          success: false,
+          message: 'Please verify your email address before logging in. Check your inbox for the verification email.',
+          requiresVerification: true
+        });
+      }
+
       // Update last login
       user.lastLogin = new Date();
       await user.save({ validateBeforeSave: false });
@@ -266,6 +291,56 @@ router.post(
     }
   }
 );
+
+// @route   GET /api/auth/verify-email
+// @desc    Verify user email with token
+// @access  Public
+router.get('/verify-email', async (req, res) => {
+  try {
+    const { token } = req.query;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification token is required',
+        error: 'invalid_token'
+      });
+    }
+
+    // Find user with this token and check expiry
+    const user = await User.findOne({
+      emailVerificationToken: token,
+      verificationTokenExpiry: { $gt: Date.now() }
+    }).select('+emailVerificationToken +verificationTokenExpiry');
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification token is invalid or has expired',
+        error: 'invalid_or_expired_token'
+      });
+    }
+
+    // Mark as verified and clear token
+    user.isEmailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.verificationTokenExpiry = undefined;
+    await user.save();
+
+    // Return success response
+    return res.json({
+      success: true,
+      message: 'Email verified successfully'
+    });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Email verification failed',
+      error: 'verification_failed'
+    });
+  }
+});
 
 // @route   POST /api/auth/logout
 // @desc    Logout user / clear cookie

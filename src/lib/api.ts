@@ -1031,15 +1031,17 @@ export const authApi = {
 
     const response = await apiRequest<{
       success: boolean;
-      user: {
+      message?: string;
+      user?: {
         id: string;
         name: string;
         email: string;
         role: string;
         createdAt: string;
+        isEmailVerified: boolean;
       };
-      token: string;
-      refreshToken: string;
+      token?: string;
+      refreshToken?: string;
     }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({
@@ -1049,6 +1051,7 @@ export const authApi = {
       }),
     });
 
+    // Only save tokens if they exist (they won't exist until email is verified)
     if (response.token && response.refreshToken) {
       saveTokens(response.token, response.refreshToken);
     }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
+import { getTenantSlugFromLocation, buildStorePath } from '@/utils/tenantUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Product, Store, CartItem } from '@/types';
@@ -55,8 +56,12 @@ type SortOption = 'name-asc' | 'name-desc' | 'price-asc' | 'price-desc' | 'newes
 type ViewMode = 'grid' | 'list';
 
 const StoreProductsPage: React.FC = () => {
-  const { subdomain } = useParams<{ subdomain: string }>();
+  const params = useParams<{ subdomain: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
+  
+  // Get tenant slug from subdomain (hostname) or path parameter (fallback)
+  const subdomain = getTenantSlugFromLocation(location, params) || params.subdomain;
   const [store, setStore] = useState<Store | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
@@ -334,7 +339,8 @@ const StoreProductsPage: React.FC = () => {
 
   const handleProductClick = (product: Product) => {
     if (!store) return;
-    navigate(`/store/${store.subdomain}/product/${product.id}`);
+    const path = buildStorePath(`/product/${product.id}`, store.subdomain);
+    navigate(path);
   };
 
   const handleAddToCart = (product: Product) => {
@@ -375,12 +381,14 @@ const StoreProductsPage: React.FC = () => {
     if (!store) return;
 
     if (!isAuthenticated) {
-      navigate(`/store/${store.subdomain}/auth?redirect=checkout`, { state: { cart } });
+      const authPath = buildStorePath('/auth?redirect=checkout', store.subdomain);
+      navigate(authPath, { state: { cart } });
       return;
     }
 
     setCartOpen(false);
-    navigate(`/store/${store.subdomain}/checkout`, {
+    const checkoutPath = buildStorePath('/checkout', store.subdomain);
+    navigate(checkoutPath, {
       state: { cart, storeId: store.id, subdomain: store.subdomain },
     });
   };

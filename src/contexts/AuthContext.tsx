@@ -88,16 +88,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signup = async (email: string, password: string, name: string) => {
     try {
       const response = await authApi.register(name, email, password);
-      if (response.success && response.user) {
-        setUser({
-          id: response.user.id,
-          email: response.user.email,
-          name: response.user.name,
-          role: response.user.role as UserRole,
-          createdAt: response.user.createdAt,
-        });
+      if (response.success) {
+        // Don't set user or token - user needs to verify email first
+        // The response will have a message about checking email
+        return;
       } else {
-        throw new Error('Registration failed');
+        throw new Error(response.message || 'Registration failed');
       }
     } catch (error) {
       if (error instanceof ApiError) {
